@@ -81,6 +81,31 @@ to an existing save; removing it returns the courier to his vanilla lines.
 Configuration lives in the SkyrimNet WebUI under **Courier Descriptions** —
 debug notifications, whether to use the LLM at all, and which LLM variant.
 
+## Known issue: the pause around the line
+
+The courier's extra line sits in a dialogue slot of a **fixed 13 seconds**, held
+open by a silent placeholder audio file. Expect a pause before the line and
+usually some quiet after it.
+
+This is a SkyrimNet limitation rather than a tuning mistake, and it has two
+halves:
+
+- **Before.** SkyrimNet generates the speech on demand, when the dialogue line
+  fires — there is no way to pre-warm it. The engine does not wait, so the
+  courier stands there until the audio exists. That is typically 4–5 seconds on
+  a cloud TTS provider, and near-instant on a fast local voice.
+- **After.** The placeholder *is* the slot length. When speech finishes early
+  the remainder is silence, and shortening the line does not shorten the wait —
+  it just moves the silence around.
+
+13 seconds is chosen to fit generation plus speech with a few seconds spare. On
+a slow provider that margin can be eaten, and the courier's own *"Looks like
+that's it"* may start while his generated line is still speaking. A fast TTS
+setup will not run into this.
+
+A delivery carrying several described items spends this budget per item, so a
+four-item delivery is a noticeably long conversation. Most deliveries carry one.
+
 ## Repository layout
 
 | Path | What it is |
