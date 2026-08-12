@@ -21,15 +21,6 @@ NOT read it (he is just the delivery man).
 {{ letterContent }}
 --- END LETTER TEXT ---
 
-{# The sender block renders only when the sender was identified. Every guard here
-   is load-bearing - an unresolved sender must render NOTHING rather than error.
-   Shape follows sever_letter_writer.prompt, which does the same lookup. #}
-{# hasSenderProfile is read much further down, by rule 2c, which must give
-   opposite instructions depending on whether the sender is a real NPC or a
-   guess. Declared BEFORE the guards so it is always defined, then set inside
-   them; a `set` in a block does propagate outward - AgencyEngine's
-   agencyengine_impulse_resolved.prompt:37 does the same and reads the value
-   three times later in the file. #}
 {% set hasSenderProfile = false %}
 {% if senderFormId and senderFormId != 0 %}
 {% set senderUUID = formid_to_uuid(senderFormId) %}
@@ -38,23 +29,10 @@ NOT read it (he is just the delivery man).
 --- BEGIN SENDER PROFILE ---
 This is the actual person who handed the courier this item. Their name is
 {{ decnpc(senderUUID).name }}.
-{# No decnpc(...).disposition here. It is computed against a LOADED actor, and a
-   letter's sender is normally unloaded - it rendered as literal template text in
-   the 15:49 run while .name on the same line resolved fine. The standing toward
-   the player comes from bio_relationships below, which does render. #}
 
 {{ render_character_profile("dialogue_target", senderUUID) }}
 
 {{ render_character_profile("bio_relationships", senderUUID) }}
-{# Probed 16:24 and both rejected, do not re-add:
-   decnpc(...).factions - DOES NOT EXIST. Rendered as literal template text, the
-     same way .disposition did, despite the decorator docs listing "factions".
-   decnpc(...).class - exists, but it is the COMBAT/skill class, not social
-     standing: it returns "Thief" for Bersi Honey-Hand, a shopkeeper. Using it to
-     judge public prominence would actively mislead.
-   The only working faction route is is_in_faction(uuid, "EditorID"), which needs
-   a hardcoded faction list. The bio summary already states standing in plain
-   language, which is what the familiarity ladder reads. #}
 --- END SENDER PROFILE ---
 {% endif %}
 {% endif %}
