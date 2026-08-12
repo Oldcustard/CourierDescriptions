@@ -66,11 +66,19 @@ in the game can later contradict.
 | | |
 |---|---|
 | Skyrim SE/AE with [SKSE](https://skse.silverlock.org/) | the platform |
-| SkyrimNet | generates and voices the line |
 | [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) | needed by `CDNBookText.dll` (VR: [58101](https://www.nexusmods.com/skyrimspecialedition/mods/58101)) |
 | [Fuz Ro D-oh](https://www.nexusmods.com/skyrimspecialedition/mods/15109) | supplies timing for unvoiced dialogue |
 
-All four are required. See `INSTALL.txt` for what each one failing looks like.
+All three are required, on top of SkyrimNet itself. See `INSTALL.txt` for what
+each one failing looks like.
+
+> **SkyrimNet's "Enable TTS For Silent NPCs" must be turned on**
+> (WebUI → Settings → Voice).
+>
+> The courier's line is delivered as an *unvoiced* dialogue line, and that
+> setting is what makes SkyrimNet speak one. With it off, everything else works
+> — the sender is resolved, the line is generated and written into the dialogue
+> — and the courier stands there saying nothing.
 
 ## Installing
 
