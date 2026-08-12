@@ -1,0 +1,4 @@
+[submodule "BookTextPlugin/lib/commonlibsse-ng"]
+	path = BookTextPlugin/lib/commonlibsse-ng
+	url = https://github.com/alandtse/CommonLibVR.git
+	branch = ng

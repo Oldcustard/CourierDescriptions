@@ -1,0 +1,4 @@
+{
+  "default-triplet": "x64-windows-static-md",
+  "overlay-ports": []
+}

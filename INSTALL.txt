@@ -1,0 +1,132 @@
+Courier Descriptions  -  a SkyrimNet plugin  (+ the CDNBookText SKSE plugin)
+============================================================================
+
+WHAT THIS DOES
+  When the vanilla courier hands you an item he has no "who sent it" voiceline
+  for, he says one extra line about the person who gave it to him - spoken in
+  his own voice, in the per-item slot, between "Let's see here..." and his
+  closing "Looks like that's it. Got to go."
+
+    "Redguard barmaid from the Mare gave me this, sounding desperate."
+    "Jarl Balgruuf handed me this himself, looking like he had something
+     heavy on his mind."
+
+  The line is generated at delivery time, so it fits the letter that actually
+  arrived - including letters written by other mods at runtime.
+
+  HE NEVER READS YOUR MAIL. The letter's text is used only to work out what
+  sort of person sent it; the courier describes THEM - how they looked, how
+  they paid, how they seemed - and never says what the letter is about.
+
+  When the sender is a real NPC and the letter names them, he describes the
+  actual person, and how well he knows them scales with how well-known they
+  are: a Jarl he recognises on sight, an innkeeper he can place by trade, a
+  private citizen stays a stranger he can only describe.
+
+  Deliveries the courier already has a voiced line for (Calcelmo's note, the
+  Dark Brotherhood note, an inheritance, and so on) are left completely alone.
+
+  Two parts ship together in this one mod - there is nothing else to download:
+    * CDN_CourierDescriptions.esp - the quest, the dialogue lines he speaks
+      into, and their silent placeholder audio.
+    * CDNBookText.dll - a small SKSE plugin that lets the mod read a letter's
+      body text and work out who signed it, and puts the generated line into
+      the dialogue line at the right moment.
+
+REQUIREMENTS
+  * Skyrim Special Edition / Anniversary Edition, with SKSE.
+  * SkyrimNet - this is a SkyrimNet plugin and does nothing without it.
+  * Address Library for SKSE Plugins   (Nexus 32444 for SE/AE, 58101 for VR)
+  * Fuz Ro D-oh                        (Nexus 15109 for SE, 44085 for AE)
+
+  All four are required. Address Library and Fuz Ro D-oh are not optional
+  extras - see TROUBLESHOOTING for what each one failing looks like.
+
+INSTALL (MO2)
+  1. Install this archive with Mod Organizer 2 and enable the mod.
+  2. Make sure SKSE, SkyrimNet, Address Library and Fuz Ro D-oh are enabled.
+  3. That is all. The DLL is self-contained and the plugin is ESL-flagged
+     (ESPFE), so it costs no load order slot.
+
+  Safe to add to an existing save. If you REMOVE it mid-playthrough, the
+  courier simply goes back to his vanilla lines.
+
+CONFIG  (SkyrimNet WebUI -> Courier Descriptions)
+  * Debug Mode         - on to see [CDN] notifications on screen and write the
+                         same steps to the Papyrus log. Also enables the
+                         console test below. Off for normal play.
+  * Enable AI Fallback - on  = the LLM describes the sender (the point of the
+                         mod). Off = he speaks a plain sender-neutral line
+                         instead, with no LLM call.
+  * LLM Variant        - which SkyrimNet LLM variant generates the line.
+                         Default "dialogue", the standard NPC-speech variant.
+                         It must be one you have configured in SkyrimNet.
+
+  Line quality follows the model you point it at. Weaker models describe the
+  sender more plainly; stronger ones are more likely to recognise a well-known
+  sender by name.
+
+TEST IT (no hotkey - via the console)
+  1. SkyrimNet WebUI -> Courier Descriptions -> Debug Mode = on.
+     Restart the game (not just a save reload).
+  2. Stand somewhere a courier can reach you - a town street, not an interior.
+  3. In the console:   set CDN_DebugDelivery to 1
+     Within a few seconds the courier walks up, delivers a test letter, and
+     speaks the generated line before "Looks like that's it."
+
+  Values 1-6 deliver six different test letters, written to pull the
+  description in different directions - a furtive midnight note, a steward's
+  summons, a debt collector's threat, a letter from a mother, a merchant's
+  statement of account, and a letter from a Jarl.
+
+  [CDN] notifications show each step on screen; the same steps go to the
+  Papyrus log:
+       Documents\My Games\Skyrim Special Edition\Logs\Script\Papyrus.0.log
+  (search it for "[CDN]"). That log only exists if Papyrus logging is on - add
+  this to Documents\My Games\Skyrim Special Edition\SkyrimCustom.ini:
+       [Papyrus]
+       bEnableLogging=1
+       bEnableTrace=1
+       bLoadDebugInformation=1
+
+KNOWN LIMITATIONS
+  * The generated line has a fixed slot of about 13 seconds. Generating the
+    speech takes a few seconds of that, so a slow TTS provider can leave the
+    line still speaking as he starts "Looks like that's it." A local or fast
+    TTS voice has several seconds to spare; a cloud voice on a bad day does
+    not. Nothing in the mod can shorten that wait.
+  * A delivery carrying more than four describable items gets lines for the
+    first four only. This is rare - most deliveries carry one.
+  * He can only recognise a sender the letter actually names, in its title or
+    its sign-off. Letters written by other mods vary in whether they do; when
+    the sender cannot be identified, he falls back to describing a stranger
+    and deliberately avoids inventing details he could not have seen.
+
+TROUBLESHOOTING
+  * The courier says a generic line about someone who left no name.
+    That is the built-in fallback, used when the generated line did not
+    arrive. Check that SkyrimNet's LLM is reachable and that "Enable AI
+    Fallback" is on.
+  * The courier says nothing extra at all.
+    Check the SKSE log for "CDNBookText.dll failed to load". That usually
+    means Address Library is missing or is the wrong build for your exact
+    Skyrim version (1.5.97 vs 1.6.640 vs 1.6.1170 and so on). Without the DLL
+    the extra line cannot be delivered at all.
+  * His extra line is cut off almost immediately.
+    Fuz Ro D-oh is missing or disabled. It supplies the timing an unvoiced
+    dialogue line needs.
+  * You changed something and nothing happened.
+    Script, DLL and plugin changes need a full game restart, not a save
+    reload - MO2 maps mod files when the game process starts.
+
+FOR OTHER MODDERS
+  * This overrides TIF__00039F81, the courier closing line's fragment script.
+    If another mod overrides the same fragment, only one wins - check your
+    load order.
+  * It adds four dialogue lines to WICourierDeliveries (039F6C). Dialogue
+    lines from different plugins merge, so other mods adding courier lines
+    are unaffected; this has been tested alongside Kaidan - Immersive
+    Features, which adds two of its own.
+  * Deliveries the courier already voices are skipped by a hardcoded list. If
+    your mod adds a courier delivery WITH its own voiced line and you see the
+    courier double up, that item needs adding to the skip list - get in touch.

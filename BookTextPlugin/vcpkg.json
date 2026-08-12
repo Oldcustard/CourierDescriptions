@@ -1,0 +1,13 @@
+{
+  "name": "cdnbooktext",
+  "version": "1.0.0",
+  "dependencies": [
+    "spdlog",
+    "fmt",
+    "directxtk",
+    "directxmath",
+    "rapidcsv",
+    "xbyak",
+    "minhook"
+  ]
+}

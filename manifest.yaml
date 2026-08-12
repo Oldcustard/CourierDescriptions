@@ -1,0 +1,45 @@
+plugin:
+  name: "Courier Descriptions"
+  version: "1.0.0"
+  description: >-
+    When the vanilla courier delivers an item he has no 'who sent it' voiceline
+    for, he says a line about the person who handed it to him - in his own
+    voice, in the per-item slot (between 'Let's see here...' and 'Looks like
+    that's it'). He never says what the letter is about. When the sender is a
+    real NPC and the letter names them, he describes the actual person, and how
+    well he knows them scales with how well-known they are. Voiced deliveries
+    (e.g. 'from Calcelmo') are left untouched.
+  icon: "✉️"
+
+schema:
+  fields:
+    - name: "Debug Mode"
+      path: "debug.enabled"
+      type: "bool"
+      description: >-
+        Show [CDN] notifications and write Papyrus traces. When on, you can also
+        trigger a test courier delivery from the console:
+        set CDN_DebugDelivery to 1  (values 1-6 pick different test letters;
+        be in a town or other exterior).
+      defaultValue: false
+      category: "Debug"
+
+    - name: "Enable AI Fallback"
+      path: "ai.enabled"
+      type: "bool"
+      description: >-
+        If on, the sender is described by the LLM - this is the point of the
+        mod. If off, the courier speaks a plain sender-neutral line instead and
+        no LLM call is made.
+      defaultValue: true
+      category: "Behaviour"
+
+    - name: "LLM Variant"
+      path: "llm.variant"
+      type: "string"
+      description: >-
+        SkyrimNet LLM variant used for the generated courier line (must match a
+        variant configured in SkyrimNet). 'dialogue' is the standard NPC-speech
+        variant.
+      defaultValue: "dialogue"
+      category: "Behaviour"
