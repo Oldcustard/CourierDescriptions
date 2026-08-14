@@ -1,6 +1,6 @@
 plugin:
   name: "Courier Descriptions"
-  version: "1.0.0"
+  version: "1.0.1"
   description: >-
     When the vanilla courier delivers an item he has no 'who sent it' voiceline
     for, he says a line about the person who handed it to him - in his own
@@ -17,10 +17,12 @@ schema:
       path: "debug.enabled"
       type: "bool"
       description: >-
-        Show [CDN] notifications and write Papyrus traces. When on, you can also
+        Show [CDN] progress notifications on screen. When on, you can also
         trigger a test courier delivery from the console:
         set CDN_DebugDelivery to 1  (values 1-6 pick different test letters;
-        be in a town or other exterior).
+        be in a town or other exterior). The same steps are always written to
+        the Papyrus log whether this is on or off, so a bug report does not
+        depend on having turned it on beforehand.
       defaultValue: false
       category: "Debug"
 

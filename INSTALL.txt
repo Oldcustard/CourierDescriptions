@@ -1,6 +1,35 @@
 Courier Descriptions  -  a SkyrimNet plugin  (+ the CDNBookText SKSE plugin)
 ============================================================================
 
+CHANGES IN 1.0.1
+
+  FIXED  Crash on load with Dynamic String Distributor 1.4.2 or newer.
+         DSD 1.4.2 added a hook on the same engine function this mod hooks to
+         put the courier's line into his dialogue, and the two collided: the
+         game crashed about a minute into loading, with an access violation
+         inside DSD. Neither mod was at fault - it was purely a question of
+         which installed its hook first. This build installs later, so the two
+         now stack instead of overwriting each other. There is nothing to
+         configure. On DSD 1.4.1 or older, or without DSD, you were never
+         affected.
+
+  ADDED  Support for Lilly - Female Courier Replacer (Nexus 4595), which gives
+         the courier its own voice type. See COMPATIBILITY.
+
+  ADDED  The delivery steps are now always written to the Papyrus log, instead
+         of only when Debug Mode is on. Debug Mode now controls the on-screen
+         notifications only. This means a delivery that misbehaves has already
+         recorded itself and does not have to be reproduced with a setting
+         turned on first. See REPORTING A PROBLEM.
+
+  DOCS   The one SkyrimNet setting this mod needs - "Enable TTS For Silent
+         NPCs" - is now stated in REQUIREMENTS. With it off you get the
+         courier's line as a subtitle with no voice, which was not previously
+         explained anywhere in this file.
+
+  Safe to install over 1.0.0 mid-playthrough. The plugin file itself is
+  byte-for-byte unchanged, so there is nothing in your save to disturb.
+
 WHAT THIS DOES
   When the vanilla courier hands you an item he has no "who sent it" voiceline
   for, he says one extra line about the person who gave it to him - spoken in
@@ -42,6 +71,15 @@ REQUIREMENTS
   All four are required. Address Library and Fuz Ro D-oh are not optional
   extras - see TROUBLESHOOTING for what each one failing looks like.
 
+  ONE SKYRIMNET SETTING MUST BE ON
+    SkyrimNet WebUI -> Settings -> Voice -> "Enable TTS For Silent NPCs"
+
+  The courier's extra line is delivered as an UNVOICED dialogue line, and that
+  setting is what makes SkyrimNet speak an unvoiced line. With it off, every
+  other part still works - the sender is identified, the line is written, the
+  subtitle appears on screen - and the courier stands there silently while it
+  scrolls past. If you get a subtitle with no voice, this is why.
+
 INSTALL (MO2)
   1. Install this archive with Mod Organizer 2 and enable the mod.
   2. Make sure SKSE, SkyrimNet, Address Library and Fuz Ro D-oh are enabled.
@@ -52,9 +90,12 @@ INSTALL (MO2)
   courier simply goes back to his vanilla lines.
 
 CONFIG  (SkyrimNet WebUI -> Courier Descriptions)
-  * Debug Mode         - on to see [CDN] notifications on screen and write the
-                         same steps to the Papyrus log. Also enables the
-                         console test below. Off for normal play.
+  * Debug Mode         - on to see [CDN] progress notifications on screen, and
+                         to enable the console test below. Off for normal play.
+                         It does NOT control logging: every step is written to
+                         the Papyrus log either way, so if something goes wrong
+                         the log is already there without having to reproduce it
+                         a second time. See REPORTING A PROBLEM.
   * Enable AI Fallback - on  = the LLM describes the sender (the point of the
                          mod). Off = he speaks a plain sender-neutral line
                          instead, with no LLM call.
@@ -79,15 +120,32 @@ TEST IT (no hotkey - via the console)
   summons, a debt collector's threat, a letter from a mother, a merchant's
   statement of account, and a letter from a Jarl.
 
-  [CDN] notifications show each step on screen; the same steps go to the
-  Papyrus log:
-       Documents\My Games\Skyrim Special Edition\Logs\Script\Papyrus.0.log
-  (search it for "[CDN]"). That log only exists if Papyrus logging is on - add
-  this to Documents\My Games\Skyrim Special Edition\SkyrimCustom.ini:
-       [Papyrus]
-       bEnableLogging=1
-       bEnableTrace=1
-       bLoadDebugInformation=1
+  [CDN] notifications show each step on screen. The same steps also go to the
+  Papyrus log - always, whether Debug Mode is on or off.
+
+REPORTING A PROBLEM
+  Three logs, and please grab them BEFORE relaunching the game - starting Skyrim
+  again overwrites all three, which is the usual reason a report arrives empty.
+
+    1. Documents\My Games\Skyrim Special Edition\SKSE\CDNBookText.log
+       This mod's own log. Says whether it hooked the game successfully and
+       whether the courier's line was handed over to be spoken.
+
+    2. Documents\My Games\Skyrim Special Edition\Logs\Script\Papyrus.0.log
+       Search it for "[CDN]" to see each step of the delivery. This one has to
+       be switched on first - add the following to
+       Documents\My Games\Skyrim Special Edition\SkyrimCustom.ini and it will
+       be recorded from then on:
+            [Papyrus]
+            bEnableLogging=1
+            bEnableTrace=1
+            bLoadDebugInformation=1
+
+    3. SkyrimNet's own log, for anything to do with the voice.
+
+  You do NOT need Debug Mode on for any of this. It only adds the on-screen
+  notifications; the logging happens regardless, so a delivery that went wrong
+  once has already recorded itself and does not need reproducing.
 
 KNOWN LIMITATIONS
   * The generated line has a fixed slot of about 13 seconds. Generating the
@@ -102,7 +160,37 @@ KNOWN LIMITATIONS
     the sender cannot be identified, he falls back to describing a stranger
     and deliberately avoids inventing details he could not have seen.
 
+COMPATIBILITY
+  * Courier REPLACERS (a different courier - a new face, or a new voice).
+    Fine, with one caveat that only affects the ones which give the courier
+    their OWN voice type, because Skyrim looks up a dialogue line's audio in a
+    folder named after the speaker's voice type. This mod's silent placeholder
+    - the thing that holds the ~13 second slot open - has to sit in that
+    folder, so a replacer with a new voice type needs its own copy.
+
+    Shipped for:
+        MaleYoungEager      the vanilla courier
+        PrettyCourierVoice  Lilly - Female Courier Replacer  (Nexus 4595)
+
+    A replacer that keeps the vanilla voice type needs nothing. One that does
+    not, and is not in the list, still works - his line is just more likely to
+    be cut off by "Looks like that's it." Tell me which replacer and I will
+    add it; it costs nothing to carry.
+
+    The line is spoken in the REPLACER'S voice, not the vanilla courier's -
+    SkyrimNet matches the voice to whoever is actually speaking, so a female
+    courier gets a female voice with no setup.
+
+  * Mods that add their OWN courier deliveries (Kaidan, NarrativeEngine, and
+    so on) are fine - see FOR OTHER MODDERS.
+
+  * Dynamic String Distributor 1.4.2+ - fixed in this build, see CHANGES.
+
 TROUBLESHOOTING
+  * His extra line appears as a SUBTITLE but he never says it out loud.
+    "Enable TTS For Silent NPCs" is off - see REQUIREMENTS. This is the most
+    common way the mod half-works: the subtitle proves everything up to the
+    voice is fine, so nothing else needs changing.
   * The courier says a generic line about someone who left no name.
     That is the built-in fallback, used when the generated line did not
     arrive. Check that SkyrimNet's LLM is reachable and that "Enable AI
@@ -115,6 +203,11 @@ TROUBLESHOOTING
   * His extra line is cut off almost immediately.
     Fuz Ro D-oh is missing or disabled. It supplies the timing an unvoiced
     dialogue line needs.
+  * His extra line gets talked over by "Looks like that's it", and you use a
+    courier replacer.
+    The replacer probably gives the courier its own voice type, which this
+    mod does not yet ship a placeholder for - see COMPATIBILITY. The line
+    still generates; it just loses the longer slot.
   * You changed something and nothing happened.
     Script, DLL and plugin changes need a full game restart, not a save
     reload - MO2 maps mod files when the game process starts.

@@ -44,14 +44,25 @@ if (-not $OutDir) { $OutDir = $repo }
 $stage = Join-Path $repo 'dist_staging'
 $zip   = Join-Path $OutDir ("Courier Descriptions-{0}.zip" -f $Version)
 
-# The voice type the courier uses, and the four dialogue lines that need a
-# silent placeholder. The FormID in the path is the INFO's own, masked to 00 -
-# which is why every line needs its own file. Both the 15- and 16-character
-# truncations of the topic name are shipped because houseCARL and the engine
-# disagree about which one is correct; the engine loads whichever it wants.
-$voiceType   = 'MaleYoungEager'
+# The voice types to ship a placeholder under, and the four dialogue lines that
+# need one. The FormID in the path is the INFO's own, masked to 00 - which is
+# why every line needs its own file.
+#
+# The engine derives the folder from the SPEAKING actor's voice type, so a
+# courier replacer that assigns its own voice type sends the lookup somewhere we
+# do not ship to, and the line falls back to Fuz Ro D-oh's 10 s cap. One folder
+# per known replacer covers that; an unused folder costs nothing.
+#
+# The topic name is truncated to 16 characters, NOT the 15 houseCARL computes -
+# confirmed from the engine's own resolved path for our INFO in the 2026-08-12
+# logs, with both spellings present in the folder:
+#   Sound\Voice\CDN_CourierDescriptions.esp\MaleYoungEager\WICourier_WICourierDeliver_00000803_1.fuz
+$voiceTypes  = @(
+    'MaleYoungEager',      # vanilla WICourierNPC (039F83)
+    'PrettyCourierVoice'   # Lilly - Female Courier Replacer (Nexus 4595)
+)
 $infoFormIds = @('00000803', '0000080B', '0000080C', '0000080D')
-$topicStems  = @('WICourier_WICourierDelive', 'WICourier_WICourierDeliver')
+$topicStem   = 'WICourier_WICourierDeliver'
 
 $pexNames = @('CDN_BookText.pex', 'CDN_Courier_QuestScript.pex', 'TIF__00039F81.pex')
 
@@ -86,14 +97,16 @@ if ($manifestVersion -ne $Version) {
 # --- stage -----------------------------------------------------------------
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 
-$voiceDir = Join-Path $stage ("Sound\Voice\CDN_CourierDescriptions.esp\{0}" -f $voiceType)
+$voiceDirs = @($voiceTypes | ForEach-Object {
+    Join-Path $stage ("Sound\Voice\CDN_CourierDescriptions.esp\{0}" -f $_)
+})
 foreach ($d in @(
     (Join-Path $stage 'SEQ'),
     (Join-Path $stage 'Scripts'),
     (Join-Path $stage 'SKSE\Plugins'),
     (Join-Path $stage 'SKSE\Plugins\SkyrimNet\prompts'),
-    (Join-Path $stage 'SKSE\Plugins\SkyrimNet\config\plugins\Courier Descriptions'),
-    $voiceDir)) {
+    (Join-Path $stage 'SKSE\Plugins\SkyrimNet\config\plugins\Courier Descriptions')
+) + $voiceDirs) {
     New-Item -ItemType Directory -Path $d -Force | Out-Null
 }
 
@@ -107,10 +120,10 @@ foreach ($n in $pexNames) {
     Copy-Item -LiteralPath $inputs["pex:$n"] -Destination (Join-Path $stage ('Scripts\' + $n))
 }
 
-# one silent placeholder per dialogue line, under both topic-name truncations
-foreach ($id in $infoFormIds) {
-    foreach ($stem in $topicStems) {
-        Copy-Item -LiteralPath $silence -Destination (Join-Path $voiceDir ("{0}_{1}_1.fuz" -f $stem, $id))
+# one silent placeholder per dialogue line, per voice type
+foreach ($voiceDir in $voiceDirs) {
+    foreach ($id in $infoFormIds) {
+        Copy-Item -LiteralPath $silence -Destination (Join-Path $voiceDir ("{0}_{1}_1.fuz" -f $topicStem, $id))
     }
 }
 

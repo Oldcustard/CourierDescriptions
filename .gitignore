@@ -4,6 +4,9 @@
 # ---------------------------------------------------------------------------
 BookTextPlugin/build/
 BookTextPlugin/build.log
+# Configuring from the repo root (cmake -B build -S BookTextPlugin) puts the
+# tree here instead. Both spellings are in the docs, so both are ignored.
+/build/
 BookTextPlugin/vcpkg_installed/
 *.pex
 
@@ -22,6 +25,11 @@ _pkg/
 CLAUDE.md
 _build/claude_md_old_pacing.md
 .claude/
+
+# Discord thread copy: the pinned OP (discord_op.md) and the per-release posts
+# (release-v*.md). Drafts for a place outside this repo, superseded the moment
+# they are pasted - the authoritative changelog is INSTALL.txt and the git tags.
+_discord/
 
 # ---------------------------------------------------------------------------
 # Third-party tooling that happens to sit in this working folder and is not

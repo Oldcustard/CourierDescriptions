@@ -1175,9 +1175,24 @@ GlobalVariable Function GetDebugDeliveryGV()
     return Game.GetFormFromFile(DEBUG_DELIVERY_GV_FORMID, "CDN_CourierDescriptions.esp") as GlobalVariable
 EndFunction
 
+; ⚠️ The Papyrus TRACE IS NOT GATED ON DEBUG MODE, deliberately. Debug Mode
+; controls the on-screen notifications ONLY.
+;
+; DBG fires on state transitions, not per poll - an idle poll logs nothing, and a
+; whole delivery is well under twenty lines - so always-on tracing costs a user
+; nothing and is the only thing that makes a bug report diagnosable. It was gated
+; before, and the cost showed up immediately: the first user report of a broken
+; delivery (2026-08-13) arrived with a Papyrus log containing not one [CDN] line,
+; because a normal player has no reason to have turned Debug Mode on. There was
+; nothing to read, and the round trip to ask for another capture cost a day.
+;
+; Debug.Trace only reaches a file when the user has [Papyrus] bEnableLogging /
+; bEnableTrace set, so this writes nothing at all for most players. That makes
+; the "is it noisy" question moot: the people who see these lines are the ones
+; who deliberately turned Papyrus logging on.
 Function DBG(String msg)
+    Debug.Trace("[CDN] " + msg, 0)
     if GetDebugMode()
         Debug.Notification("[CDN] " + msg)
-        Debug.Trace("[CDN] " + msg, 0)
     endIf
 EndFunction

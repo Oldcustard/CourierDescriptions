@@ -149,6 +149,12 @@ cmake --build build --config Release
 
 Output: `BookTextPlugin/build/CDNBookText/SKSE/Plugins/Release/CDNBookText.dll`.
 
+**Bump `project(CDNBookText VERSION …)` in `BookTextPlugin/CMakeLists.txt` (and
+`vcpkg.json`) for a release.** It becomes the plugin's SKSE version and the first
+line of `CDNBookText.log`, which is how a bug report's log gets matched to a
+build. CMake echoes `Parsing commonlibsse_plugin_version <x>` when you configure,
+so it is easy to confirm.
+
 The **static triplet is load-bearing** — the DLL has to ship self-contained, or
 SKSE silently unloads it when it cannot resolve `fmt.dll`/`spdlog.dll`. Verify
 with `dumpbin /imports`: only Windows DLLs and the VC++ runtime should remain.
@@ -165,13 +171,13 @@ script uses.
 ```powershell
 tools\package.ps1 -ScriptsDir <folder with the three .pex> `
                   -Dll BookTextPlugin\build\CDNBookText\SKSE\Plugins\Release\CDNBookText.dll `
-                  -Version 1.0.0
+                  -Version 1.0.1
 ```
 
 It assembles the exact shipping layout from tracked sources plus those two build
-inputs, expands the silent `.fuz` into the eight names the engine looks for, and
-writes `Courier Descriptions-<version>.zip`. It refuses to run if anything is
-missing, so a release cannot be built half-empty.
+inputs, copies the silent `.fuz` to one name per dialogue line per courier voice
+type, and writes `Courier Descriptions-<version>.zip`. It refuses to run if
+anything is missing, so a release cannot be built half-empty.
 
 ## License
 

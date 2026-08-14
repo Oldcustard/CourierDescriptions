@@ -643,6 +643,38 @@ namespace
 //
 // CommonLibSSE ships no entry-detour facility, so this uses MinHook, which
 // decodes the prologue's instruction lengths and builds a real trampoline.
+//
+// ⚠️ AND THIS MUST INSTALL LATE - Dynamic String Distributor HOOKS THE SAME
+// FUNCTION. DSD's Hooks.cpp installs GetResponseListHook on the identical
+// RELOCATION_ID(25083, 25626), from kPostPostLoad, with its own
+// hook_function_prologue<T, 6>, whose "trampoline" is a VERBATIM byte copy:
+//
+//     for (size_t i = 0; i < a_originalByteLength; ++i)
+//         db(*reinterpret_cast<std::uint8_t*>(a_originalFuncAddr + i));
+//     jmp(ptr[rip]); dq(a_originalFuncAddr + a_originalByteLength);
+//
+// No relocation. So whichever of the two installs FIRST decides who crashes:
+// we used to install from SKSEPlugin_Load, which is strictly before
+// kPostPostLoad, so the 6 bytes DSD copied were OUR 5-byte `E9 rel32` plus a
+// leftover. That displacement is relative to the function entry; executed from
+// DSD's buffer it lands in unmapped memory, and every line of dialogue in the
+// game goes through here:
+//
+//     Tried to execute memory at 0x7FF6FECC589B
+//     [1] DynamicStringDistributor.dll ... Hooks.cpp:108 GetResponseListHook::thunk
+//
+// Two user crash reports, ~60 s into load, both this. (DSD 1.2.5 - the dev
+// load order's version - has no GetResponseListHook at all, which is why this
+// never showed up here; it arrived in 1.4.x.)
+//
+// Installing at kDataLoaded puts us AFTER DSD, and then it composes, because
+// MinHook does what DSD does not: a leading `E9 rel32` is rewritten as a
+// JMP_ABS to its true destination (trampoline.c, `(hs.opcode & 0xFD) == 0xE9`).
+// So DSD copies the pristine prologue, our trampoline becomes an absolute jump
+// to DSD's thunk, and the chain is entry -> us -> DSD -> original.
+//
+// DO NOT move this back into SKSEPlugin_Load. The residual risk is only a mod
+// that byte-copies a prologue at kDataLoaded or later - none known.
 
 void CDNBookText::InstallHooks()
 {
@@ -658,6 +690,19 @@ void CDNBookText::InstallHooks()
     // without another guess - compare against the Address Library RVA.
     logs::info("CDNBookText: GetResponseList at {:016X} (base+{:X})"sv,
                target.address(), target.address() - REL::Module::get().base());
+
+    // The prologue as we found it. A leading E9/EB/FF25 means another plugin
+    // detoured this function before us - the single fact the two crash reports
+    // of 2026-08-12 could not supply, and the one that identifies the mod we
+    // are layering over.
+    {
+        const auto* p = reinterpret_cast<const std::uint8_t*>(target.address());
+        logs::info("CDNBookText: prologue {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}{}"sv,
+                   p[0], p[1], p[2], p[3], p[4], p[5],
+                   (p[0] == 0xE9 || p[0] == 0xEB || (p[0] == 0xFF && p[1] == 0x25))
+                       ? "  <- ALREADY DETOURED by another plugin"sv
+                       : ""sv);
+    }
 
     if (const auto status = MH_CreateHook(addr, reinterpret_cast<LPVOID>(&GetResponseList_Hook),
                                           reinterpret_cast<LPVOID*>(&g_origGetResponseList));
