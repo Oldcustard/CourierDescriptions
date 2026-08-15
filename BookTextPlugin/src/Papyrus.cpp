@@ -10,6 +10,17 @@ namespace
     // (may include <font>/markup and <Alias=...> tokens). TESObjectBOOK inherits
     // TESDescription, whose GetDescription fills a BSString with the DESC text.
     // Returns "" for a null book or an empty description.
+    // Every control character comes back as a space. Vanilla book text is full of
+    // CR/LF, and ONE raw CR in the context JSON is fatal: SkyrimNet's parse fails
+    // with "control character U+000D (CR) must be escaped", it then renders the
+    // prompt with NO variables bound at all, and the model - handed a template
+    // still reading {{ itemName }} - answers "Please provide the {{ itemName }},
+    // ... so I can write the line." That reached an armed INFO on 2026-08-15.
+    //
+    // It has to be scrubbed HERE. Papyrus has no \r escape, so CleanForJSON
+    // cannot even name the character it needs to drop; its \n and \t branches
+    // caught the test letters (authored on one line) and nothing else. Bytes
+    // >= 0x80 are left alone so UTF-8 survives.
     RE::BSFixedString GetBookText(RE::StaticFunctionTag*, RE::TESObjectBOOK* a_book)
     {
         if (!a_book)
@@ -19,7 +30,15 @@ namespace
         a_book->GetDescription(buf, a_book);  // default fieldType 'CSED' == DESC == book text
 
         const char* str = buf.c_str();
-        return RE::BSFixedString(str ? str : "");
+        if (!str)
+            return RE::BSFixedString("");
+
+        std::string text{ str };
+        for (auto& ch : text) {
+            if (static_cast<unsigned char>(ch) < 0x20 || static_cast<unsigned char>(ch) == 0x7F)
+                ch = ' ';
+        }
+        return RE::BSFixedString(text.c_str());
     }
     // ---- Sender resolution ---------------------------------------------------
     //
@@ -38,7 +57,7 @@ namespace
     // matches more than one actor resolves to 0.
 
     // One entry per unique actor NAME. `ambiguous` means two genuinely different
-    // people share it and we refuse to guess - see BuildSenderIndex for why that
+    // people share it and we refuse to guess - see BuildIndexes for why that
     // is NOT the same as two records sharing a name.
     struct SenderEntry
     {
@@ -48,7 +67,10 @@ namespace
         bool               ambiguous = false;
     };
 
-    std::once_flag                               g_senderIndexOnce;
+    // ONE flag for the single form-table pass that feeds every index. Two flags
+    // meant the pass could run twice, and worse, its result depended on which
+    // native Papyrus happened to call first.
+    std::once_flag                               g_indexOnce;
     std::unordered_map<std::string, SenderEntry> g_senderIndex;
 
     // Place names, so "A warning from Ivarstead" is not read as a person called
@@ -102,11 +124,22 @@ namespace
         return a_in;
     }
 
-    // One pass over the form table, cached for the session. Called from
-    // ArmDelivery, which runs when the delivery is first QUEUED - typically
-    // minutes before the courier reaches the player - so the cost is invisible.
-    // Do NOT call this from the 1.5 s armed poll or the closing-line backstop.
-    void BuildSenderIndex()
+    // ONE pass over the form table, cached for the session, feeding the sender
+    // name index and the place names. The table is ~500k forms and walking it is
+    // the single most expensive thing this DLL does, so it happens exactly once.
+    //
+    // ⛔ The voiced-item scan is NOT done here. It was, for one build: matching
+    // every INFO's parentTopic against WICourierDeliveries. The table held 143194
+    // INFO forms, every one of them with a valid parent topic, and NONE of them
+    // under 00039F6C - not even our own four, which the courier had spoken from
+    // minutes earlier. INFOs are created with their topic, not at data load, and
+    // that topic had not been loaded yet. See EnsureVoicedScan.
+    //
+    // Called from ArmDelivery, which runs when the delivery is first QUEUED -
+    // typically minutes before the courier reaches the player - so the cost is
+    // invisible. Do NOT call this from the 1.5 s armed poll or the closing-line
+    // backstop.
+    void BuildIndexes()
     {
         const auto& [map, lock] = RE::TESForm::GetAllForms();
         if (!map) {
@@ -114,9 +147,13 @@ namespace
             return;
         }
 
-        std::size_t              scanned = 0;
-        std::size_t              ambiguous = 0;
-        std::size_t              merged = 0;
+        std::size_t scanned   = 0;
+        std::size_t ambiguous = 0;
+        std::size_t merged    = 0;
+
+        // Scoped: naming a form in the report below re-enters the form table, so
+        // the read lock must be gone before it runs.
+        {
         const RE::BSReadLockGuard guard{ lock };
 
         for (const auto& [id, form] : *map) {
@@ -189,8 +226,15 @@ namespace
             }
         }
 
+        }  // read lock released
+
         logs::info("CDNBookText: sender index built - {} unique-named actors, {} ambiguous, {} same-plugin variants merged, {} place names"sv,
                    scanned, ambiguous, merged, g_placeNames.size());
+    }
+
+    void EnsureIndexes()
+    {
+        std::call_once(g_indexOnce, BuildIndexes);
     }
 
     // "Letter from Ysolda" / "Note from Ysolda" -> "Ysolda"
@@ -387,7 +431,7 @@ namespace
     // are filtered out inside NameFromTitle.
     RE::BSFixedString SenderNameFromTitle(RE::StaticFunctionTag*, RE::BSFixedString a_title)
     {
-        std::call_once(g_senderIndexOnce, BuildSenderIndex);  // NameFromTitle needs g_placeNames
+        EnsureIndexes();  // NameFromTitle needs g_placeNames
         const std::string_view title = a_title.c_str() ? a_title.c_str() : "";
         return RE::BSFixedString(NameFromTitle(title).c_str());
     }
@@ -396,7 +440,7 @@ namespace
     // anonymous stranger exactly as it did before this existed.
     std::int32_t FindSenderRef(RE::StaticFunctionTag*, RE::BSFixedString a_title, RE::TESObjectBOOK* a_book)
     {
-        std::call_once(g_senderIndexOnce, BuildSenderIndex);
+        EnsureIndexes();
         if (g_senderIndex.empty())
             return 0;
 
@@ -618,6 +662,315 @@ namespace
         }
         return RE::BSFixedString("");
     }
+
+    // ---- Which items does the courier ALREADY have a voiced line for? --------
+    //
+    // We must not describe an item vanilla already describes - the player would
+    // hear who sent it twice, once in the courier's recorded voice and once in
+    // ours, and the recorded one is right.
+    //
+    // This was a hardcoded list of nine Skyrim.esm letters in Papyrus. That list
+    // is only correct on a load order where nothing but Skyrim.esm touches the
+    // courier, which is not a load order anyone plays. WICourierDeliveries is a
+    // standard extension point and things pile into it: Hearthfires adds five
+    // letters, Dragonborn four, and quest mods however many they like. On the dev
+    // machine's own order the shipped list was missing NINETEEN items and wrong
+    // about a twentieth - TCBM.esp repoints 023EE1's GetItemCount away from
+    // WICastMagic04Letter to one of its own notes, so the letter the list names
+    // is no longer the letter that INFO is about.
+    //
+    // So read it out of the data instead. Any INFO with a line about a specific
+    // item is conditioned on the player receiving that item, which makes the
+    // answer mechanical: walk the topic's INFOs, take the parameter of every
+    // GetItemCount condition, and that set IS the list. It costs one pass at
+    // first use and is then a hash lookup.
+    //
+    // OR-chains need no special handling. A condition block like 071440's -
+    // five ORed GetItemCounts covering two vanilla letters and three from mods -
+    // means the INFO speaks for any one of them, so every arm belongs in the set;
+    // collecting them all is exactly right, not an approximation.
+
+    constexpr std::uint32_t kDeliveriesTopic = 0x039F6C;  // WICourierDeliveries
+
+    // The shipped list, kept as a FLOOR under the scan rather than replaced by
+    // it. Two jobs:
+    //
+    //  1. It covers the window BEFORE the topic is loaded, which is every check
+    //     made at ArmDelivery. Anything on this list costs no LLM call at all;
+    //     anything not on it and voiced anyway costs one wasted generation and is
+    //     then dropped by the second check at the greeting.
+    //  2. The scan only sees items named by a CONDITION. If a line ever gates on
+    //     its item some other way - a script fragment property, a quest stage -
+    //     the scan cannot see it, and the floor stops that becoming a regression
+    //     against 1.0.1.
+    //
+    // ⚠️ EVERY ENTRY IS CONDITION-DERIVED, not remembered. Each one is the
+    // GetItemCount parameter of a real INFO under WICourierDeliveries, read out of
+    // the plugin. A guessed entry here is worse than a missing one: a false
+    // positive makes the courier say NOTHING about a letter he has no line for,
+    // and unlike a duplicate it is invisible in testing.
+    //
+    // The DLC entries were added because most players have the DLC, so leaving
+    // them out meant a wasted LLM call on the commonest voiced deliveries there
+    // are. Verified identical in vanilla and under USSEP, which overrides four of
+    // these INFOs without touching their item conditions. A plugin that is not
+    // installed simply resolves to nothing.
+    struct FallbackVoicedItem
+    {
+        std::string_view plugin;
+        std::uint32_t    localID;
+    };
+
+    constexpr FallbackVoicedItem kFallbackVoicedItems[] = {
+        { "Skyrim.esm"sv, 0x05224A },  // DBEntranceLetter             - Mysterious Note
+        { "Skyrim.esm"sv, 0x0249AF },  // MS12QuintusLetter
+        { "Skyrim.esm"sv, 0x01BFF5 },  // WIKill03InheritanceLetter
+        { "Skyrim.esm"sv, 0x023EE5 },  // WICastMagic04Letter          - Letter from a Friend
+        { "Skyrim.esm"sv, 0x0A0F46 },  // WIAddItem07Note              - Letter from Calcelmo
+        { "Skyrim.esm"sv, 0x0D91D1 },  // MS06FalkFirebeardNote
+        { "Skyrim.esm"sv, 0x094D8B },  // DA07MythicDawnMuseumPamphlet
+        { "Skyrim.esm"sv, 0x071442 },  // WIKill04RewardLetter
+        { "Skyrim.esm"sv, 0x071443 },  // WIKill04ThanksLetter
+
+        // HearthFires - INFOs 003DE5 (2 items), 003DE6, 01770F (2 items)
+        { "HearthFires.esm"sv, 0x003F78 },  // BYOHAdoptionStewardCourierNote - "<Alias=Home> Furnishings"
+        { "HearthFires.esm"sv, 0x0030A1 },  // BYOHHouseJarlFriendLetter      - from the Steward of <HoldCity>
+        { "HearthFires.esm"sv, 0x003F7C },  // BYOHAdoptionConstanceLetter    - "Consider Adoption"
+        { "HearthFires.esm"sv, 0x016130 },  // BYOHHouseJarlIntroLetter
+        { "HearthFires.esm"sv, 0x010BEF },  // BYOHHouseJarlFriendLetter2
+
+        // Dragonborn - INFOs 036603..036606, one per part
+        { "Dragonborn.esm"sv, 0x0365FF },  // DLC2dunKolbjornCourierNote01 - Ralis Sedarys, Part 1
+        { "Dragonborn.esm"sv, 0x036600 },  // DLC2dunKolbjornCourierNote02 - Part 2
+        { "Dragonborn.esm"sv, 0x036601 },  // DLC2dunKolbjornCourierNote03 - Part 3
+        { "Dragonborn.esm"sv, 0x036602 },  // DLC2dunKolbjornCourierNote04 - Part 4
+    };
+
+    std::unordered_set<RE::FormID> g_voicedItems;
+
+    // A FormList parameter contributes its MEMBERS, not itself: the condition is
+    // satisfied by holding any one of them, so each one is spoken for. Depth
+    // limited because a FormList can hold FormLists and nothing prevents a cycle.
+    void AddVoicedItem(RE::TESForm* a_form, int a_depth)
+    {
+        if (!a_form || a_depth > 4)
+            return;
+
+        if (a_form->Is(RE::FormType::FormList)) {
+            auto* list = a_form->As<RE::BGSListForm>();
+            if (!list)
+                return;
+            for (auto* entry : list->forms)
+                AddVoicedItem(entry, a_depth + 1);
+            if (list->scriptAddedTempForms) {
+                for (const auto id : *list->scriptAddedTempForms)
+                    AddVoicedItem(RE::TESForm::LookupByID(id), a_depth + 1);
+            }
+            return;
+        }
+
+        g_voicedItems.insert(a_form->GetFormID());
+    }
+
+    // Every GetItemCount parameter in one INFO's condition block. Returns how many
+    // such conditions it saw, which is the only number that tells a topic with no
+    // item-specific lines apart from one we failed to read.
+    std::uint32_t ScanInfoConditions(RE::TESTopicInfo* a_info)
+    {
+        std::uint32_t hits = 0;
+        for (auto* cond = a_info->objConditions.head; cond; cond = cond->next) {
+            if (cond->data.functionData.function != RE::FUNCTION_DATA::FunctionID::kGetItemCount)
+                continue;
+            // With this flag the parameter slot holds an alias INDEX, not a form
+            // pointer. Dereferencing it would be reading an integer as an address.
+            if (cond->data.flags.usesAliases)
+                continue;
+            ++hits;
+            AddVoicedItem(static_cast<RE::TESForm*>(cond->data.functionData.params[0]), 0);
+        }
+        return hits;
+    }
+
+    std::size_t g_voicedFromList = 0;
+
+    void FinishVoicedScan(std::uint32_t a_infos, std::uint32_t a_hits, std::size_t a_added);
+
+    // Seeds the floor once, then reads the topic's OWN info array - the only route
+    // that has ever worked.
+    //
+    // ⚠️ THE ANSWER IS ONLY AVAILABLE WHILE THE CONVERSATION IS LIVE, so this
+    // RETRIES rather than caching a failure. TESTopic::topicInfos is null until the
+    // engine loads the topic, and the INFO forms themselves do not exist before
+    // that either: a form-table pass at ArmDelivery walked 143194 INFOs, every one
+    // with a valid parent topic, and found NOT ONE under WICourierDeliveries -
+    // including our own four, which the same session went on to speak. So there is
+    // no route that answers early, and the shipped floor is what covers the gap
+    // until the greeting, when the array is populated and this returns the real
+    // answer. Papyrus asks AGAIN at publish time for exactly that reason.
+    //
+    // ⛔ AND IT DOES NOT LATCH ON THE FIRST SUCCESS EITHER. The array is filled
+    // INCREMENTALLY, so an early scan returns a real but PARTIAL answer, and
+    // caching that is the same silent failure as caching a miss. Measured
+    // 2026-08-15, one load order, two runs:
+    //
+    //   20:10:31  scan on attempt 6:  25 INFOs, 29 conditions -> 28 items
+    //   20:39:58  scan on attempt 29: 19 INFOs, 24 conditions -> 24 items
+    //
+    // The second is a strict SUBSET of the first, and what it lost says what
+    // happened: every item it found is from plugin index <= 1D, and all four it
+    // missed are >= B1 (Suvaris, Mr. Wolf, Cassia, The Northern Special). That is
+    // a load-order PREFIX - the engine appends to this array as it works down the
+    // order, and the scan caught it mid-fill. Nothing about the caller said so:
+    // topicInfos was non-null and numTopicInfos was a perfectly plausible 19.
+    //
+    // So a pass runs whenever numTopicInfos has CHANGED since the last one, and
+    // the results are UNIONED - the set only ever grows, and every entry in it
+    // was read from a condition on some pass. Latching would have silenced four
+    // mod-added letters the courier voices himself, on a load order where the
+    // scan appeared to work perfectly.
+    //
+    // Rescanning is cheap: a null check until the array exists, then ~25 INFOs'
+    // conditions on the handful of passes where the count moves. Nothing here
+    // walks the form table.
+    bool          g_voicedScanAbandoned = false;  // permanent failure; retrying cannot help
+    int           g_voicedScanAttempts  = 0;      // calls that got as far as looking
+    int           g_voicedScanPasses    = 0;      // calls that actually read the array
+    std::uint32_t g_voicedScannedInfos  = 0;      // numTopicInfos as of the last pass
+
+    void EnsureVoicedScan()
+    {
+        if (g_voicedScanAbandoned)
+            return;
+
+        auto* handler = RE::TESDataHandler::GetSingleton();
+        if (!handler) {
+            logs::error("CDNBookText: no TESDataHandler; voiced-item set is EMPTY"sv);
+            return;
+        }
+
+        if (g_voicedScanAttempts++ == 0) {
+            for (const auto& [plugin, local] : kFallbackVoicedItems) {
+                if (auto* form = handler->LookupForm(static_cast<RE::FormID>(local), plugin))
+                    g_voicedItems.insert(form->GetFormID());
+            }
+            g_voicedFromList = g_voicedItems.size();
+            logs::info("CDNBookText: shipped floor resolved {} of {} items "
+                       "(the rest are from DLC this order does not have)"sv,
+                       g_voicedFromList, std::size(kFallbackVoicedItems));
+        }
+
+        // Each failure below gets its OWN line. They were one collapsed message
+        // once, and it cost a round trip to find out which of them had fired.
+        const auto topicID = handler->LookupFormID(static_cast<RE::FormID>(kDeliveriesTopic), "Skyrim.esm");
+        if (topicID == 0) {
+            logs::error("CDNBookText: WICourierDeliveries ({:06X}:Skyrim.esm) is not in this "
+                        "load order - voiced-item set is the shipped list only ({} items)"sv,
+                        kDeliveriesTopic, g_voicedFromList);
+            g_voicedScanAbandoned = true;  // no load order change can fix this mid-session
+            return;
+        }
+
+        auto* topicForm = RE::TESForm::LookupByID(topicID);
+        if (!topicForm) {
+            logs::error("CDNBookText: WICourierDeliveries resolves to {:08X} but that form does "
+                        "not exist"sv,
+                        topicID);
+            return;
+        }
+        auto* topic = topicForm->As<RE::TESTopic>();
+        if (!topic) {
+            logs::error("CDNBookText: {:08X} is a {}, not a Dialogue topic"sv,
+                        topicID, static_cast<std::uint32_t>(topicForm->GetFormType()));
+            g_voicedScanAbandoned = true;
+            return;
+        }
+
+        if (!topic->topicInfos || topic->numTopicInfos == 0) {
+            // Expected before the courier speaks, and NOT an error - the floor is
+            // in force and the next caller tries again. Logged only the first few
+            // times: the armed poll asks per item, per delivery.
+            if (g_voicedScanAttempts <= 3) {
+                logs::info("CDNBookText: WICourierDeliveries not loaded yet (topicInfos {}, "
+                           "numTopicInfos {}) - shipped list of {} stands, will retry"sv,
+                           topic->topicInfos ? "set" : "null", topic->numTopicInfos,
+                           g_voicedFromList);
+            }
+            return;
+        }
+
+        // Nothing has been added to the array since the last pass, so a rescan
+        // would read exactly what it read before. This is the ONLY thing standing
+        // between the armed poll (which asks per item, per 1.5 s) and a rescan on
+        // every call - not a cache of the answer, a cache of the array's size.
+        if (topic->numTopicInfos == g_voicedScannedInfos)
+            return;
+
+        const auto    before = g_voicedItems.size();
+        std::uint32_t infos  = 0;
+        std::uint32_t hits   = 0;
+        for (std::uint32_t i = 0; i < topic->numTopicInfos; ++i) {
+            if (auto* info = topic->topicInfos[i]) {
+                ++infos;
+                hits += ScanInfoConditions(info);
+            }
+        }
+        g_voicedScannedInfos = topic->numTopicInfos;
+        ++g_voicedScanPasses;
+        FinishVoicedScan(infos, hits, g_voicedItems.size() - before);
+    }
+
+    void FinishVoicedScan(std::uint32_t a_infos, std::uint32_t a_hits, std::size_t a_added)
+    {
+        logs::info("CDNBookText: voiced-delivery scan pass {} (attempt {}): {} INFOs, {} "
+                   "GetItemCount conditions -> {} items, {} new ({} of them from the shipped "
+                   "list)"sv,
+                   g_voicedScanPasses, g_voicedScanAttempts, a_infos, a_hits,
+                   g_voicedItems.size(), a_added, g_voicedFromList);
+
+        // A later pass that found the array grown but the item set unchanged has
+        // nothing to itemise, and repeating 25 identical lines would bury the pass
+        // that DID find something. The FIRST pass always prints, added or not, so
+        // the guarantee below holds even on an order whose whole set is the floor.
+        if (a_added == 0 && g_voicedScanPasses > 1)
+            return;
+
+        // Logged in full whenever it changes. This set decides which deliveries
+        // stay silent, so when a report says "he said nothing about my letter"
+        // the answer is either in this list or it is not, and no second round
+        // trip is needed to find out. Sorted so two passes can be diffed.
+        std::vector<RE::FormID> sorted(g_voicedItems.begin(), g_voicedItems.end());
+        std::sort(sorted.begin(), sorted.end());
+        for (const auto id : sorted) {
+            auto*       form = RE::TESForm::LookupByID(id);
+            const char* name = form ? form->GetName() : nullptr;
+            logs::info("CDNBookText:   voiced {:08X}  {}"sv, id, (name && *name) ? name : "<no name>");
+        }
+    }
+
+    const std::unordered_set<RE::FormID>& VoicedItems()
+    {
+        EnsureVoicedScan();
+        return g_voicedItems;
+    }
+
+    // True when the courier already has his own line about this item. Deliberately
+    // a predicate and not a Form[] getter: the array never crosses into Papyrus,
+    // so there is no array to be held in a member variable and poisoned by a save.
+    bool IsVoicedDeliveryItem(RE::StaticFunctionTag*, RE::TESForm* a_item)
+    {
+        if (!a_item)
+            return false;
+        const auto& voiced = VoicedItems();
+        return voiced.find(a_item->GetFormID()) != voiced.end();
+    }
+
+    // For the Papyrus log line only. At ArmDelivery this is normally the shipped
+    // floor and nothing more - the real set only becomes readable at the greeting,
+    // so read this number again after the delivery, not before it.
+    std::int32_t GetVoicedDeliveryItemCount(RE::StaticFunctionTag*)
+    {
+        return static_cast<std::int32_t>(VoicedItems().size());
+    }
 }
 
 // ⚠️ DO NOT go back to SKSE::Trampoline here. The first version of this hook
@@ -730,6 +1083,9 @@ bool CDNBookText::BindPapyrus(RE::BSScript::IVirtualMachine* a_vm)
     a_vm->RegisterFunction("GetTopicInfoText", PapyrusClass, GetTopicInfoText);
     a_vm->RegisterFunction("FindSenderRef", PapyrusClass, FindSenderRef);
     a_vm->RegisterFunction("SenderNameFromTitle", PapyrusClass, SenderNameFromTitle);
-    logs::info("CDNBookText: registered GetBookText, SetTopicInfoText, GetTopicInfoText, FindSenderRef, SenderNameFromTitle"sv);
+    a_vm->RegisterFunction("IsVoicedDeliveryItem", PapyrusClass, IsVoicedDeliveryItem);
+    a_vm->RegisterFunction("GetVoicedDeliveryItemCount", PapyrusClass, GetVoicedDeliveryItemCount);
+    logs::info("CDNBookText: registered GetBookText, SetTopicInfoText, GetTopicInfoText, FindSenderRef, "
+               "SenderNameFromTitle, IsVoicedDeliveryItem, GetVoicedDeliveryItemCount"sv);
     return true;
 }

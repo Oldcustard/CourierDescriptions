@@ -1,33 +1,35 @@
 Courier Descriptions  -  a SkyrimNet plugin  (+ the CDNBookText SKSE plugin)
 ============================================================================
 
-CHANGES IN 1.0.1
+CHANGES IN 1.1.0
 
-  FIXED  Crash on load with Dynamic String Distributor 1.4.2 or newer.
-         DSD 1.4.2 added a hook on the same engine function this mod hooks to
-         put the courier's line into his dialogue, and the two collided: the
-         game crashed about a minute into loading, with an access violation
-         inside DSD. Neither mod was at fault - it was purely a question of
-         which installed its hook first. This build installs later, so the two
-         now stack instead of overwriting each other. There is nothing to
-         configure. On DSD 1.4.1 or older, or without DSD, you were never
-         affected.
+  FIXED  Deliveries the courier already has his own voiceline for are now
+         worked out from the game data at delivery time, instead of from a
+         list built into the mod. That list was nine Skyrim.esm letters and
+         was wrong by nineteen on one ordinary load order - Hearthfires alone
+         adds five - so DLC and mod-added deliveries he voices himself got a
+         second, unwanted line on top. He now stays quiet for every delivery
+         that already has a recorded line, whichever mod added it, including
+         patches that repoint an existing line at a different note.
 
-  ADDED  Support for Lilly - Female Courier Replacer (Nexus 4595), which gives
-         the courier its own voice type. See COMPATIBILITY.
+  FIXED  Letters longer than one line could produce a generic or nonsensical
+         line. A line break inside a letter broke the request sent to the LLM,
+         which then answered without ever seeing the letter. Short test
+         letters hid this; the first real book found it. All letters are now
+         cleaned before they are sent.
 
-  ADDED  The delivery steps are now always written to the Papyrus log, instead
-         of only when Debug Mode is on. Debug Mode now controls the on-screen
-         notifications only. This means a delivery that misbehaves has already
-         recorded itself and does not have to be reproduced with a setting
-         turned on first. See REPORTING A PROBLEM.
+  FIXED  Speaking to a courier before he delivers could cost you the line for
+         that delivery. The mod took that conversation for the delivery and
+         spent the line on it, so the hand-over itself passed in silence. It
+         now waits for an actual delivery before committing, so a chat
+         beforehand costs nothing.
 
-  DOCS   The one SkyrimNet setting this mod needs - "Enable TTS For Silent
-         NPCs" - is now stated in REQUIREMENTS. With it off you get the
-         courier's line as a subtitle with no voice, which was not previously
-         explained anywhere in this file.
+  CHANGED  His line is shorter - one sentence, up to fourteen words. An
+         over-long line did not merely crowd the next one, it deleted it,
+         which cost either his closing line or the line about a second item in
+         the same delivery.
 
-  Safe to install over 1.0.0 mid-playthrough. The plugin file itself is
+  Safe to install over 1.0.1 mid-playthrough. The plugin file itself is
   byte-for-byte unchanged, so there is nothing in your save to disturb.
 
 WHAT THIS DOES
@@ -184,7 +186,8 @@ COMPATIBILITY
   * Mods that add their OWN courier deliveries (Kaidan, NarrativeEngine, and
     so on) are fine - see FOR OTHER MODDERS.
 
-  * Dynamic String Distributor 1.4.2+ - fixed in this build, see CHANGES.
+  * Dynamic String Distributor 1.4.2+ - fine. The load crash the two used to
+    cause together was fixed in 1.0.1.
 
 TROUBLESHOOTING
   * His extra line appears as a SUBTITLE but he never says it out loud.
@@ -220,6 +223,10 @@ FOR OTHER MODDERS
     lines from different plugins merge, so other mods adding courier lines
     are unaffected; this has been tested alongside Kaidan - Immersive
     Features, which adds two of its own.
-  * Deliveries the courier already voices are skipped by a hardcoded list. If
-    your mod adds a courier delivery WITH its own voiced line and you see the
-    courier double up, that item needs adding to the skip list - get in touch.
+  * Deliveries the courier already voices are skipped automatically, and there
+    is nothing to register. Every INFO under WICourierDeliveries that speaks
+    about a particular item is conditioned on the player having received it,
+    so the parameters of that topic's GetItemCount conditions ARE the set -
+    which is read out of the live game data at delivery time. If your mod adds
+    a courier delivery WITH its own voiced line, condition it the way the
+    vanilla ones are and this mod will stay out of its way.

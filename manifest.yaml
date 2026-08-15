@@ -1,6 +1,6 @@
 plugin:
   name: "Courier Descriptions"
-  version: "1.0.1"
+  version: "1.1.0"
   description: >-
     When the vanilla courier delivers an item he has no 'who sent it' voiceline
     for, he says a line about the person who handed it to him - in his own

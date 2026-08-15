@@ -54,6 +54,10 @@ Float POLL_ARMED = 1.5    ; delivery queued; watching for the courier to start t
 
 Int MAX_ITEMS = 4         ; per delivery; extras are described generically
 
+; QuietPollsToRearm() lives below, as a FUNCTION rather than an initialised member
+; - the one value in this file where a wrong default is dangerous rather than
+;   merely wrong. See its comment.
+
 ; --- current delivery -------------------------------------------------------
 ; Slot i is the item dItem<i> described by the fact dFact<i>. A fact of "" is not
 ; generated yet; genIndex is the slot the LLM is working towards.
@@ -85,12 +89,22 @@ String dTitleName2
 String dTitleName3
 
 Int pendingCount = 0
+; How many items the container held at the last scan. Only so a rescan can tell
+; "nothing new arrived" from "something arrived and we deliberately said nothing
+; about it" - see RescanDelivery. A scalar, never an array (see the rule).
+Int dLastScanCount = 0
 Int genIndex = 0
 Bool bAwaitingLLM = false
 Bool bArmed = false        ; the delivery slots reflect a queued delivery
-Bool bNarrated = false     ; the narration for this delivery has gone out
+; The lines are armed for a conversation that is happening NOW. Not a permanent
+; latch: the conversation it was spent on may turn out not to have been the
+; delivery, in which case PollAfterPublish stands it back down.
+Bool bNarrated = false
 Bool bWarmedTTS = false    ; PrepareNPCDialogue already asked for this delivery
 Bool bLinePublished = false ; the line is in the INFO the courier speaks
+; Consecutive polls since the publish with the courier out of dialogue. Scalar,
+; never an array (see the rule below).
+Int dQuietPolls = 0
 Actor currentCourier = None
 
 ; =============================================================================
@@ -282,7 +296,7 @@ Float Function PollDelivery()
     endIf
 
     if bNarrated
-        return POLL_IDLE    ; he is already speaking; nothing left to watch for
+        return PollAfterPublish()
     endIf
 
     ; The courier's container keeps filling after the delivery is first queued, so
@@ -315,10 +329,100 @@ Float Function PollDelivery()
         ; during the delivery - see NarrateDelivery for why DirectNarration is
         ; no longer called.
         bNarrated = true
+        dQuietPolls = 0
         DBG("courier is in dialogue - INFO armed, leaving the line to DBVO")
-        return POLL_IDLE
+        return POLL_ARMED
     endIf
     return POLL_ARMED
+EndFunction
+
+; The lines are armed and a conversation is under way - but WHICH conversation?
+;
+; IsInDialogueWithPlayer() cannot tell the delivery from an ordinary chat, and the
+; courier is a talkable NPC like any other: SkyrimNet will happily hold a
+; conversation with him while he is still walking the letter across town. That
+; chat used to CONSUME the delivery - bNarrated latched for good, the poll went
+; idle, and RescanDelivery stopped - so anything queued between that chat and the
+; real handover was delivered with nothing said about it. Exactly the bug the
+; rescan was added to fix, arriving by a different door.
+;
+; The publish is therefore no longer final. A delivery is only OVER when
+; WICourierItemCount reaches 0, and vanilla GiveItemsToPlayer zeroes it from
+; inside the closing line's own fragment - i.e. while the conversation is still
+; open - so PollDelivery's disarm always wins the race with this function.
+; Reaching here with the courier out of dialogue means the conversation ended
+; WITHOUT a handover: it was not the delivery. Stand the lines down and go back to
+; watching. The facts are already cached in the slots, so re-arming at the real
+; greeting costs no LLM call.
+;
+; SIX SECONDS OF CONTINUOUS QUIET, not one poll, because the two errors are not
+; symmetric. Un-publishing too EARLY tears the overrides down mid-delivery and
+; the courier speaks the authored placeholder instead of the line this mod exists
+; to produce - a silent failure. Un-publishing too LATE costs only the items
+; queued during the delay, and the courier is still walking, so there is nothing
+; waiting on this poll. Bias hard towards late.
+;
+; IsInDialogueWithPlayer() is the only signal there is: SkyrimNet exposes no
+; conversation state, and its GetSpeechQueueSize/GetTimeSinceLastAudioEnded are
+; both blind to SilentDialogueManager audio (see the pacing note). The flag itself
+; is trustworthy - it is the same one the publish above fires on, and vanilla
+; WICourierScript.removeRefFromContainer busy-waits on it to avoid touching the
+; container mid-conversation - so 6 s of unbroken quiet inside a ~26 s delivery
+; conversation would mean the trigger that publishes the line never worked either.
+; Consecutive quiet polls before a spent publish is stood back down: 4 x 1.5 s =
+; 6 s of unbroken silence.
+;
+; A FUNCTION, not an initialised member like POLL_ARMED or MAX_ITEMS, because this
+; is the one constant here whose wrong value is DANGEROUS rather than merely
+; wrong. A member added by a script update is restored from the .pex's initial
+; value on an existing save - but this script exists because of a member that came
+; back wrong on exactly that path, and a 0 here does not degrade, it INVERTS the
+; guard: dQuietPolls += 1 then `1 < 0` is false, so the first quiet poll tears the
+; overrides down. A literal returned from a function cannot be restored from
+; anything.
+Int Function QuietPollsToRearm() Global
+    return 4
+EndFunction
+
+Float Function PollAfterPublish()
+    Actor courier = currentCourier
+    if courier == None
+        return POLL_IDLE    ; nothing to watch; the disarm above ends the delivery
+    endIf
+
+    if courier.IsInDialogueWithPlayer()
+        dQuietPolls = 0
+        return POLL_ARMED
+    endIf
+
+    dQuietPolls += 1
+    if dQuietPolls < QuietPollsToRearm()
+        return POLL_ARMED
+    endIf
+
+    DBG("conversation ended with the delivery still queued - that was not the delivery; re-arming")
+    UnpublishLine()
+    return POLL_ARMED
+EndFunction
+
+; Puts the INFOs back to their authored text and shuts the gate, WITHOUT touching
+; the delivery slots - the items, facts and senders survive, so the next
+; conversation republishes them for free.
+;
+; Both halves matter. Clearing the overrides alone would leave CDN_LineReady open
+; with the authored placeholders behind it; shutting the gate alone would leave a
+; generated line sitting in an INFO for a conversation it was never meant for.
+Function UnpublishLine()
+    Int j = 0
+    while j < MAX_ITEMS
+        CDN_BookText.SetTopicInfoText(PLUGIN_NAME, InfoFormID(j), "")
+        j += 1
+    endWhile
+    SetLineReady(0)
+    bLinePublished = false
+    bNarrated = false
+    bWarmedTTS = false
+    dQuietPolls = 0
 EndFunction
 
 ; =============================================================================
@@ -410,6 +514,14 @@ Function ArmDelivery(WICourierScript wi)
     endIf
 
     DBG("ArmDelivery: " + cont + " holds " + cont.GetNumItems() + " item(s)")
+
+    ; First call builds the DLL's voiced-item set by walking the delivery topic.
+    ; Done HERE, before the scan that needs it and minutes before the courier
+    ; arrives, so the one-off cost lands where nothing is waiting on it. The
+    ; itemised set is in CDNBookText.log; this is just the headline count.
+    DBG("ArmDelivery: courier already voices " + CDN_BookText.GetVoicedDeliveryItemCount() + " item(s) in this load order")
+
+    dLastScanCount = cont.GetNumItems()
     if ScanContainer(cont, true) > 0
         GenerateNextFact()
     endIf
@@ -507,12 +619,23 @@ Function RescanDelivery(WICourierScript wi)
     if cont == None
         return
     endIf
-    if ScanContainer(cont, false) > 0
+    ; The rescan runs every 1.5 s, so it cannot log per-item the way ArmDelivery
+    ; does - it would repeat the same skip line for the whole walk. Comparing the
+    ; container size instead reports each ARRIVAL once. Without this a delivery of
+    ; nothing but vanilla-voiced letters is completely silent in the log, and
+    ; "correctly said nothing" is indistinguishable from "pipeline is dead" - which
+    ; is exactly what console test 9 looked like on 2026-08-15.
+    Int n = cont.GetNumItems()
+    Int added = ScanContainer(cont, false)
+    if added > 0
         ; Re-open the publish so the new item gets an INFO and CDN_LineReady is
         ; raised to the new count.
         bLinePublished = false
         GenerateNextFact()
+    elseIf n > dLastScanCount
+        DBG("rescan: container grew to " + n + " item(s), none of the new ones get a line - the courier voices them himself")
     endIf
+    dLastScanCount = n
 EndFunction
 
 Function ClearDelivery()
@@ -525,11 +648,13 @@ Function ClearDelivery()
         i += 1
     endWhile
     pendingCount = 0
+    dLastScanCount = 0
     genIndex = 0
     bAwaitingLLM = false
     bArmed = false
     bNarrated = false
     bWarmedTTS = false
+    dQuietPolls = 0
     if bLinePublished
         ; Leave every INFO carrying its authored text between deliveries, so a
         ; line generated for one delivery can never be spoken at an unrelated one.
@@ -639,7 +764,18 @@ Function PublishLineToInfo()
     Int i = 0
     while i < pendingCount && published < MAX_ITEMS
         String fact = GetDeliveryFact(i)
-        if GetDeliveryItem(i) != None && fact != ""
+        Form item = GetDeliveryItem(i)
+        ; ASKED AGAIN, DELIBERATELY. ScanContainer asked at ArmDelivery, when the
+        ; answer is usually only the shipped floor - WICourierDeliveries is not
+        ; loaded that early, so the DLL cannot read the load order's real set (see
+        ; CDN_BookText.IsVoicedDeliveryItem). By the time this runs at the greeting
+        ; the topic IS loaded and the answer is complete, so an item that slipped
+        ; through the first check is dropped here, before it can be spoken over the
+        ; courier's own recorded line. The wasted generation is the price of asking
+        ; early; saying it twice is not.
+        if item != None && fact != "" && IsVoicedItem(item)
+            DBG("late skip: " + item.GetName() + " - the courier voices it himself")
+        elseIf item != None && fact != ""
             if IsGenericFact(fact)
                 ; Generation failed for this item, so there is no line to speak.
                 ; GenericFact() is a bare phrase written for BuildNarration to
@@ -661,8 +797,19 @@ Function PublishLineToInfo()
         i += 1
     endWhile
 
+    ; Every INFO past the last one we filled carries whatever an EARLIER publish
+    ; put there. Harmless while CDN_LineReady gates them, but a late skip lowers
+    ; that count, and a slot left armed below the new count would speak a line
+    ; about an item we just decided to stay quiet about.
+    Int j = published
+    while j < MAX_ITEMS
+        CDN_BookText.SetTopicInfoText(PLUGIN_NAME, InfoFormID(j), "")
+        j += 1
+    endWhile
+
     if published == 0
         DBG("PublishLineToInfo: no line to publish")
+        SetLineReady(0)
         return
     endIf
 
@@ -941,35 +1088,24 @@ WICourierScript Function GetWICourier()
     return wiQuest
 EndFunction
 
-; Vanilla courier letters that already get a named sender line in the courier
-; dialogue - we must NOT double-speak for these.
+; Letters the courier already has a recorded line about - we must NOT speak over
+; those, or the player hears who sent it twice and our version is the wrong one.
 ;
-; The skip-list is a LOCAL array, rebuilt per call. That is deliberate: a member
-; array cannot survive a save here (see the big warning above), and this runs at
-; most MAX_ITEMS times per delivery, which is nothing.
+; This WAS nine hardcoded Skyrim.esm FormIDs. It is now read out of the game data
+; by the DLL, because nine was only ever right on a load order where nothing but
+; Skyrim.esm touches WICourierDeliveries, and that is not a load order anyone
+; plays: Hearthfires adds five letters to that topic, Dragonborn four, quest mods
+; as many as they like, and a patch can repoint an existing condition at a
+; different note entirely. On this dev machine the shipped list was missing 19
+; items. See CDN_BookText.IsVoicedDeliveryItem for how the set is derived.
+;
+; The nine are still in there - the DLL keeps them as a floor under the scan - so
+; the worst case if the scan comes back empty is exactly the 1.0.1 behaviour.
 Bool Function IsVoicedItem(Form item)
     if item == None
         return false
     endIf
-    Form[] skip = new Form[9]
-    skip[0] = Game.GetFormFromFile(0x05224A, "Skyrim.esm")  ; Dark Brotherhood note
-    skip[1] = Game.GetFormFromFile(0x0249AF, "Skyrim.esm")  ; Quintus Navale letter
-    skip[2] = Game.GetFormFromFile(0x01BFF5, "Skyrim.esm")  ; Inheritance letter
-    skip[3] = Game.GetFormFromFile(0x023EE5, "Skyrim.esm")  ; Letter from a Friend
-    skip[4] = Game.GetFormFromFile(0x0A0F46, "Skyrim.esm")  ; Calcelmo note
-    skip[5] = Game.GetFormFromFile(0x0D91D1, "Skyrim.esm")  ; Falk Firebeard letter
-    skip[6] = Game.GetFormFromFile(0x094D8B, "Skyrim.esm")  ; Museum pamphlet
-    skip[7] = Game.GetFormFromFile(0x071442, "Skyrim.esm")  ; generic fallback item 1
-    skip[8] = Game.GetFormFromFile(0x071443, "Skyrim.esm")  ; generic fallback item 2
-
-    Int i = 0
-    while i < skip.Length
-        if skip[i] == item
-            return true
-        endIf
-        i += 1
-    endWhile
-    return false
+    return CDN_BookText.IsVoicedDeliveryItem(item)
 EndFunction
 
 ; Curated item-to-sender map: items vanilla does NOT voice but where we know the
@@ -1045,7 +1181,15 @@ Int Function ResolveSender(Form item)
 EndFunction
 
 ; Escape a string for safe JSON embedding and cap it at maxOut output chars.
-; Escapes " and \, drops CR, turns LF/tab into a space. Needs SKSE StringUtil.
+; Escapes " and \, turns LF and tab into a space. Needs SKSE StringUtil.
+;
+; ⚠️ It does NOT handle CARRIAGE RETURN, and cannot: Papyrus has no \r escape, so
+; there is no way to write the character down to compare against. Vanilla letters
+; are full of CRLF, and one unescaped CR makes SkyrimNet's JSON parse fail - it
+; then renders the prompt with NO variables bound and the model answers "Please
+; provide the {{ itemName }}...". CDN_BookText.GetBookText therefore returns the
+; body with every control character already replaced by a space. Do not assume
+; this function is sufficient on its own for text from anywhere else.
 String Function CleanForJSON(String s, Int maxOut) Global
     if s == ""
         return ""
@@ -1107,6 +1251,10 @@ EndFunction
 ; courier delivery of CDN_TestLetter (a non-voiced test note) so you can hear the
 ; generated line. Checked only while Debug Mode is on. Be somewhere a courier can
 ; reach you (a town or exterior).
+;
+; 1-6 test the LINE (six senders pulling the prompt in different directions);
+; 7-11 test the SKIP LIST, by delivering letters the courier already voices.
+; See TestLetterFormID for the full table.
 ; =============================================================================
 
 Function CheckDebugTrigger()
@@ -1140,6 +1288,48 @@ EndFunction
 ; no sender at all, so the three rungs are covered across the set.
 ;
 ; Anything outside 1-6 falls back to letter 1.
+;
+; 7-11 are the SKIP-LIST tests and work the other way round: they deliver letters
+; the courier voices HIMSELF, so a pass is a run where we say nothing at all.
+;
+;   set CDN_DebugDelivery to 7    Consider Adoption            (Hearthfires)
+;   set CDN_DebugDelivery to 8    Ralis Sedarys, Part 1        (Dragonborn)
+;   set CDN_DebugDelivery to 9    Letter from Quintus Navale   (Skyrim)
+;   set CDN_DebugDelivery to 10   MIXED: 7 and letter 1 in ONE delivery
+;   set CDN_DebugDelivery to 11   Letter from Suvaris          (TCBM.esp)
+;
+; 7 and 8 are chosen because they were MISSING from the hardcoded list that
+; shipped through 1.0.1 - on that build the courier read his own line and we
+; talked over it. 9 was on that list, so it is the control: it must behave
+; identically before and after. 10 is the one that matters most, because it is
+; the only case that can fail in both directions at once - he must speak his
+; recorded line about the adoption letter AND ours about the test note.
+;
+; 11 is the ONLY test that reaches the scan itself. 7-10 are all in the shipped
+; floor, so they are skipped at ArmDelivery and prove nothing about reading the
+; topic; this one exists in no list anywhere and is knowable ONLY by scanning
+; WICourierDeliveries at the greeting. Its item is
+; 11955F:TCBM.esp ("Thieves Guild For Good Guys - Taking Care of Business Redux"),
+; and it is doubly interesting:
+;
+;   * It rides a VANILLA INFO - 023EE1, "A letter... not sure who from. He
+;     wouldn't say. Just that he was a friend of yours." TCBM overrides that INFO
+;     and ADDS a GetItemCount condition for its own letter beside the vanilla one.
+;     This is the "a patch repoints an existing condition" case, and no list of
+;     FormIDs could ever have caught it.
+;   * Its plugin index is B1, in the TAIL of the load order - the part a
+;     half-filled topicInfos array drops. It was one of the four items the
+;     partial scan of 2026-08-15 20:39 lost. So a pass here also proves the
+;     union-across-passes fix is holding.
+;
+; A pass is a delivery where we say NOTHING and he speaks the line above.
+; Chosen over the other three tail letters on purpose: Cassia's Plea carries a
+; script (it starts The Forgotten City), and Tools of Kagrenac's is called
+; "Anonymous Note", which is indistinguishable from two other items in the scan
+; log. This one carries no script and has a unique name.
+;
+; 7 and 10 need Hearthfires, 8 needs Dragonborn, 11 needs TCBM.esp. Missing means
+; "not found", not a silent no-op.
 Int Function TestLetterFormID(Int which)
     if which == 2
         return 0x00000807      ; CDN_TestLetter_Court
@@ -1155,13 +1345,52 @@ Int Function TestLetterFormID(Int which)
     return TEST_LETTER_FORMID  ; 0x801 CDN_TestLetter
 EndFunction
 
+; Resolves a test letter to a Form. 7-9 and 11 come from their own plugins, which is why
+; this exists rather than the FormID alone - and why they need no master on our
+; .esp: GetFormFromFile resolves against the LIVE load order, so we can deliver a
+; Hearthfires letter without adding Hearthfires to our master list (which would
+; invalidate the SEQ file and make the mod hard-depend on a DLC).
+Form Function TestLetterForm(Int which)
+    if which == 7
+        return Game.GetFormFromFile(0x00003F7C, "HearthFires.esm")   ; Consider Adoption
+    elseIf which == 8
+        return Game.GetFormFromFile(0x000365FF, "Dragonborn.esm")    ; Ralis Sedarys, Part 1
+    elseIf which == 9
+        return Game.GetFormFromFile(0x000249AF, "Skyrim.esm")        ; Letter from Quintus Navale
+    elseIf which == 11
+        return Game.GetFormFromFile(0x0011955F, "TCBM.esp")          ; Letter from Suvaris
+    endIf
+    return Game.GetFormFromFile(TestLetterFormID(which), "CDN_CourierDescriptions.esp")
+EndFunction
+
 Function DebugForceDelivery(Int which = 1)
     WICourierScript wi = GetWICourier()
     if wi == None
         Debug.Notification("[CDN] DebugForceDelivery: WICourier not resolved")
         return
     endIf
-    Form testLetter = Game.GetFormFromFile(TestLetterFormID(which), "CDN_CourierDescriptions.esp")
+
+    ; The mixed delivery. Queued as two separate adds because that is how a real
+    ; multi-item delivery arrives - two quests putting one letter each into the
+    ; same container - and because a delivery that is entirely skipped is a
+    ; weaker test: it cannot tell "the skip list works" apart from "the whole
+    ; delivery pipeline is dead".
+    if which == 10
+        Form voiced = TestLetterForm(7)
+        Form ours   = TestLetterForm(1)
+        if voiced == None || ours == None
+            Debug.Notification("[CDN] DebugForceDelivery: mixed test needs Hearthfires")
+            return
+        endIf
+        wi.addItemToContainer(voiced, 1)
+        wi.addItemToContainer(ours, 1)
+        Debug.Notification("[CDN] Mixed test delivery queued - expect HIS line, then OURS.")
+        Debug.Trace("[CDN] DebugForceDelivery: queued " + voiced.GetName() + " (he voices it) + " + ours.GetName() + " (we voice it) via WICourier", 0)
+        ReportQueueCount(wi)
+        return
+    endIf
+
+    Form testLetter = TestLetterForm(which)
     if testLetter == None
         Debug.Notification("[CDN] DebugForceDelivery: test letter " + which + " not found")
         return
@@ -1169,6 +1398,35 @@ Function DebugForceDelivery(Int which = 1)
     wi.addItemToContainer(testLetter, 1)
     Debug.Notification("[CDN] Test delivery " + which + " queued - the courier will find you.")
     Debug.Trace("[CDN] DebugForceDelivery: queued " + testLetter.GetName() + " (slot " + which + ") via WICourier", 0)
+    ReportQueueCount(wi)
+EndFunction
+
+; Prints WICourierItemCount straight after a test queue, because a delivery that
+; never happens looks IDENTICAL to a trigger that never fired: below 1, the poll
+; takes its one completely silent path (nothing queued, not armed, gate shut) and
+; writes nothing at all.
+;
+; Vanilla drives that global BOTH ways - addItemToContainer increments,
+; removeRefFromContainer decrements, GiveItemsToPlayer zeroes - so a cycle that
+; decrements an item vanilla had already handed over leaves it at -1, and the next
+; queue only brings it back to 0. Nothing then happens and NOTHING SAYS WHY: the
+; vanilla courier quest reads the same global, so he is not coming either, and the
+; log looks exactly like a dead pipeline.
+;
+; Cost 20 minutes on 2026-08-15 (21:10 run, test 11) with the trigger line present
+; and not one line after it. `set WICourierItemCount to 1` in the console restarts
+; a delivery whose items are already in the container.
+Function ReportQueueCount(WICourierScript wi)
+    if wi == None || wi.pWICourierItemCount == None
+        DBG("WICourierItemCount is unreachable - no delivery can start")
+        return
+    endIf
+    Float n = wi.pWICourierItemCount.GetValue()
+    if n < 1.0
+        DBG("WICourierItemCount is " + n + " after queueing - BELOW 1, so no courier is coming, ours or vanilla's. Console: set WICourierItemCount to 1")
+    else
+        DBG("WICourierItemCount is now " + n)
+    endIf
 EndFunction
 
 GlobalVariable Function GetDebugDeliveryGV()

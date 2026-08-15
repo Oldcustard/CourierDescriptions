@@ -171,7 +171,7 @@ script uses.
 ```powershell
 tools\package.ps1 -ScriptsDir <folder with the three .pex> `
                   -Dll BookTextPlugin\build\CDNBookText\SKSE\Plugins\Release\CDNBookText.dll `
-                  -Version 1.0.1
+                  -Version 1.1.0
 ```
 
 It assembles the exact shipping layout from tracked sources plus those two build

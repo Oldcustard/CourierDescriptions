@@ -20,9 +20,11 @@ _pkg/
 # ---------------------------------------------------------------------------
 # Local development notes. CLAUDE.md is the working design journal: it carries
 # absolute paths from the machine it was written on and references to specific
-# test runs, so it stays local.
+# test runs, so it stays local. dev-notes/ is the same journal split by topic -
+# CLAUDE.md is now just the index and the rule list - so it stays local too.
 # ---------------------------------------------------------------------------
 CLAUDE.md
+dev-notes/
 _build/claude_md_old_pacing.md
 .claude/
 
