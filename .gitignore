@@ -47,3 +47,10 @@ Thumbs.db
 desktop.ini
 *.user
 *.suo
+
+# ---------------------------------------------------------------------------
+# Raw capture logs for upstream bug reports. A trace-level SkyrimNet run is
+# 30 MB+, so the raw files stay local; the trimmed excerpts that actually go
+# into a report live beside them as .md and ARE tracked.
+# ---------------------------------------------------------------------------
+docs/issue-silent-placeholder/evidence/*.log
