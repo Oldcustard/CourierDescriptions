@@ -58,8 +58,18 @@ $zip   = Join-Path $OutDir ("Courier Descriptions-{0}.zip" -f $Version)
 # logs, with both spellings present in the folder:
 #   Sound\Voice\CDN_CourierDescriptions.esp\MaleYoungEager\WICourier_WICourierDeliver_00000803_1.fuz
 $voiceTypes  = @(
-    'MaleYoungEager',      # vanilla WICourierNPC (039F83)
-    'PrettyCourierVoice'   # Lilly - Female Courier Replacer (Nexus 4595)
+    'MaleYoungEager',       # vanilla WICourierNPC (039F83)
+    'PrettyCourierVoice',   # Lilly - Female Courier Replacer (Nexus 4595)
+
+    # The Courier Crew (Nexus 61400). Repoints the persistent courier ref
+    # 039FB7 at WICourierWorld, templated (Traits) from a 6-entry LCharCourier
+    # rolled per delivery - so ONE ref delivers under five different voice
+    # types. MaleYoungEager covers two of the six entries; these four cover the
+    # rest.
+    'FemaleCoward',         # WICourierNPC3 (000801:CourierCrew.esp)
+    'FemaleCondescending',  # WICourierNPC4 (000809:CourierCrew.esp)
+    'MaleEvenToned',        # WICourierNPC5 (000D63:CourierCrew.esp)
+    'MaleKhajiit'           # WICourierNPC6 (000810:CourierCrew.esp)
 )
 $infoFormIds = @('00000803', '0000080B', '0000080C', '0000080D')
 $topicStem   = 'WICourier_WICourierDeliver'

@@ -89,6 +89,28 @@ to an existing save; removing it returns the courier to his vanilla lines.
 Configuration lives in the SkyrimNet WebUI under **Courier Descriptions** —
 debug notifications, whether to use the LLM at all, and which LLM variant.
 
+## Compatibility
+
+**Courier replacers are supported.** The courier's line needs a placeholder
+audio file under his voice type to hold the dialogue slot open, so a replacer
+that gives him a different voice needs that voice listed here. Shipped:
+
+| Mod | Voice type(s) |
+|---|---|
+| *(vanilla)* | `MaleYoungEager` |
+| [Lilly — Female Courier Replacer](https://www.nexusmods.com/skyrimspecialedition/mods/4595) | `PrettyCourierVoice` |
+| [The Courier Crew](https://www.nexusmods.com/skyrimspecialedition/mods/61400) | `FemaleCoward`, `FemaleCondescending`, `MaleEvenToned`, `MaleKhajiit` |
+
+Using a replacer that isn't listed? The courier still speaks his line, but the
+timing goes wrong and his closing *"Looks like that's it"* can get cut off. Open
+an issue with the mod's name and it's a one-line fix.
+
+Otherwise this mod adds four dialogue lines to `WICourierDeliveries` and
+overrides one Papyrus fragment (`TIF__00039F81`), so it coexists with anything
+that only *adds* courier letters — Hearthfires, Dragonborn, 3DNPC and the rest
+are handled automatically, and letters the courier already has a recorded line
+for are left alone.
+
 ## Known issue: the pause around the line
 
 The courier's extra line sits in a dialogue slot of a **fixed 13 seconds**, held
