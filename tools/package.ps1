@@ -18,7 +18,8 @@
     Path to the built CDNBookText.dll.
 
 .PARAMETER Version
-    Version string for the archive name. Should match manifest.yaml.
+    Version string for the archive name. Should match manifest.yaml and
+    External/oldcustard.courier-descriptions/manifest.json.
 
 .PARAMETER OutDir
     Where to write the archive. Defaults to the repository root.
@@ -76,16 +77,26 @@ $topicStem   = 'WICourier_WICourierDeliver'
 
 $pexNames = @('CDN_BookText.pex', 'CDN_Courier_QuestScript.pex', 'TIF__00039F81.pex')
 
+# --- the SkyrimNet content layer (beta 25+) -------------------------------
+# Content ships as an EXTERNAL content plugin, one folder under
+# SKSE/Plugins/SkyrimNet/external/. The folder name MUST equal the manifest's
+# "id" or SkyrimNet rejects the whole folder at startup, so $contentId is
+# load-bearing in both places. The root manifest.yaml is a DIFFERENT file -
+# the WebUI settings schema - and still ships under config/plugins/.
+$contentId  = 'oldcustard.courier-descriptions'
+$contentDir = Join-Path $repo ("External\{0}" -f $contentId)
+
 # --- verify every input up front ------------------------------------------
 $silence = Join-Path $repo '_build\silence_13s.fuz'
 $inputs  = [ordered]@{
-    'plugin'   = Join-Path $repo 'Plugin\CDN_CourierDescriptions.esp'
-    'seq'      = Join-Path $repo 'Plugin\CDN_CourierDescriptions.seq'
-    'manifest' = Join-Path $repo 'manifest.yaml'
-    'prompt'   = Join-Path $repo 'Prompts\courier_sender_line.prompt'
-    'install'  = Join-Path $repo 'INSTALL.txt'
-    'silence'  = $silence
-    'dll'      = $Dll
+    'plugin'    = Join-Path $repo 'Plugin\CDN_CourierDescriptions.esp'
+    'seq'       = Join-Path $repo 'Plugin\CDN_CourierDescriptions.seq'
+    'manifest'  = Join-Path $repo 'manifest.yaml'
+    'cmanifest' = Join-Path $contentDir 'manifest.json'
+    'prompt'    = Join-Path $contentDir 'prompts\courier_sender_line.prompt'
+    'install'   = Join-Path $repo 'INSTALL.txt'
+    'silence'   = $silence
+    'dll'       = $Dll
 }
 foreach ($n in $pexNames) { $inputs["pex:$n"] = Join-Path $ScriptsDir $n }
 
@@ -97,11 +108,22 @@ if ($missing.Count -gt 0) {
     throw ("cannot package - {0} input(s) missing:`n  {1}" -f $missing.Count, ($missing -join "`n  "))
 }
 
-# manifest version should match what we are naming the archive
+# manifest versions should match what we are naming the archive
 $manifestVersion = (Select-String -Path $inputs['manifest'] -Pattern '^\s*version:\s*"([^"]+)"' |
                     Select-Object -First 1).Matches.Groups[1].Value
 if ($manifestVersion -ne $Version) {
     Write-Warning ("manifest.yaml says version {0} but the archive is being named {1}" -f $manifestVersion, $Version)
+}
+
+$contentManifest = Get-Content -LiteralPath $inputs['cmanifest'] -Raw | ConvertFrom-Json
+if ($contentManifest.id -ne $contentId) {
+    throw ("content manifest id '{0}' does not match folder name '{1}' - SkyrimNet would reject the folder" -f $contentManifest.id, $contentId)
+}
+if ($contentManifest.version -notmatch '^\d+\.\d+\.\d+$') {
+    throw ("content manifest version '{0}' is not strict semver (X.Y.Z)" -f $contentManifest.version)
+}
+if ($contentManifest.version -ne $Version) {
+    throw ("content manifest.json says version {0} but the archive is being named {1} - bump both together" -f $contentManifest.version, $Version)
 }
 
 # --- stage -----------------------------------------------------------------
@@ -114,18 +136,19 @@ foreach ($d in @(
     (Join-Path $stage 'SEQ'),
     (Join-Path $stage 'Scripts'),
     (Join-Path $stage 'SKSE\Plugins'),
-    (Join-Path $stage 'SKSE\Plugins\SkyrimNet\prompts'),
+    (Join-Path $stage "SKSE\Plugins\SkyrimNet\external\$contentId\prompts"),
     (Join-Path $stage 'SKSE\Plugins\SkyrimNet\config\plugins\Courier Descriptions')
 ) + $voiceDirs) {
     New-Item -ItemType Directory -Path $d -Force | Out-Null
 }
 
-Copy-Item -LiteralPath $inputs['plugin']   -Destination (Join-Path $stage 'CDN_CourierDescriptions.esp')
-Copy-Item -LiteralPath $inputs['seq']      -Destination (Join-Path $stage 'SEQ\CDN_CourierDescriptions.seq')
-Copy-Item -LiteralPath $inputs['install']  -Destination (Join-Path $stage 'INSTALL.txt')
-Copy-Item -LiteralPath $inputs['dll']      -Destination (Join-Path $stage 'SKSE\Plugins\CDNBookText.dll')
-Copy-Item -LiteralPath $inputs['prompt']   -Destination (Join-Path $stage 'SKSE\Plugins\SkyrimNet\prompts\courier_sender_line.prompt')
-Copy-Item -LiteralPath $inputs['manifest'] -Destination (Join-Path $stage 'SKSE\Plugins\SkyrimNet\config\plugins\Courier Descriptions\manifest.yaml')
+Copy-Item -LiteralPath $inputs['plugin']    -Destination (Join-Path $stage 'CDN_CourierDescriptions.esp')
+Copy-Item -LiteralPath $inputs['seq']       -Destination (Join-Path $stage 'SEQ\CDN_CourierDescriptions.seq')
+Copy-Item -LiteralPath $inputs['install']   -Destination (Join-Path $stage 'INSTALL.txt')
+Copy-Item -LiteralPath $inputs['dll']       -Destination (Join-Path $stage 'SKSE\Plugins\CDNBookText.dll')
+Copy-Item -LiteralPath $inputs['cmanifest'] -Destination (Join-Path $stage "SKSE\Plugins\SkyrimNet\external\$contentId\manifest.json")
+Copy-Item -LiteralPath $inputs['prompt']    -Destination (Join-Path $stage "SKSE\Plugins\SkyrimNet\external\$contentId\prompts\courier_sender_line.prompt")
+Copy-Item -LiteralPath $inputs['manifest']  -Destination (Join-Path $stage 'SKSE\Plugins\SkyrimNet\config\plugins\Courier Descriptions\manifest.yaml')
 foreach ($n in $pexNames) {
     Copy-Item -LiteralPath $inputs["pex:$n"] -Destination (Join-Path $stage ('Scripts\' + $n))
 }

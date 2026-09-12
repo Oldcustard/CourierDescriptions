@@ -1,6 +1,25 @@
 Courier Descriptions  -  a SkyrimNet plugin  (+ the CDNBookText SKSE plugin)
 ============================================================================
 
+CHANGES IN 1.2.0
+
+  ADDED   Support for The Courier Crew (Nexus 61400). Its couriers deliver
+          under four extra voice types, and each needs its own copy of the
+          silent placeholder that holds the line's slot open. Without it the
+          generated line still plays but is more likely to be talked over by
+          the closing "Looks like that's it."
+
+  CHANGED The SkyrimNet content now ships in the new (beta 25) plugin format,
+          so SkyrimNet 0.25.0 or later is required. On an older SkyrimNet the
+          courier's generated line silently never happens - he falls back to
+          his plain no-name line - while everything else in the mod still
+          works. On beta 25 the content registers as an external plugin
+          layer: you can confirm it loaded under WebUI -> Plugins ->
+          Installed Plugins, listed as "Courier Descriptions" with an
+          External badge. Installing this update over an earlier version is
+          fine; the old prompt copy left under
+          SKSE/Plugins/SkyrimNet/prompts/ is ignored by beta 25, not deleted.
+
 CHANGES IN 1.1.0
 
   FIXED  Deliveries the courier already has his own voiceline for are now
@@ -66,7 +85,8 @@ WHAT THIS DOES
 
 REQUIREMENTS
   * Skyrim Special Edition / Anniversary Edition, with SKSE.
-  * SkyrimNet - this is a SkyrimNet plugin and does nothing without it.
+  * SkyrimNet 0.25 (beta 25) or later - this is a SkyrimNet plugin and does
+    nothing without it. The content ships in the beta 25 plugin format.
   * Address Library for SKSE Plugins   (Nexus 32444 for SE/AE, 58101 for VR)
   * Fuz Ro D-oh                        (Nexus 15109 for SE, 44085 for AE)
 
@@ -173,6 +193,8 @@ COMPATIBILITY
     Shipped for:
         MaleYoungEager      the vanilla courier
         PrettyCourierVoice  Lilly - Female Courier Replacer  (Nexus 4595)
+        FemaleCoward, FemaleCondescending, MaleEvenToned, MaleKhajiit
+                            The Courier Crew  (Nexus 61400)
 
     A replacer that keeps the vanilla voice type needs nothing. One that does
     not, and is not in the list, still works - his line is just more likely to

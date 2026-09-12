@@ -1,0 +1,16 @@
+{
+  "id": "oldcustard.courier-descriptions",
+  "type": "bundle",
+  "title": "Courier Descriptions",
+  "tagline": "The vanilla courier describes whoever handed him your mail - a generated line in his own voice that never reveals what the letter says.",
+  "description": "When the vanilla courier delivers an item he has no 'who sent it' voiceline for, he says a line about the person who handed it to him - in his own voice, in the per-item slot (between 'Let's see here...' and 'Looks like that's it'). He never says what the letter is about. When the sender is a real NPC and the letter names them, he describes the actual person, and how well he knows them scales with how well-known they are. Voiced deliveries (e.g. 'from Calcelmo') are left untouched.\n\nThis layer carries only the SkyrimNet content (the prompt). The mod's quest, dialogue lines and CDNBookText SKSE plugin ship in the same archive - install the full mod, not just this layer.",
+  "author": "oldcustard",
+  "tags": ["courier", "dialogue"],
+  "nsfw": false,
+  "icon": "sparkles",
+  "version": "1.2.0",
+  "min_skyrimnet_version": "0.25.0",
+  "mods": [
+    { "name": "Courier Descriptions", "file": "CDN_CourierDescriptions.esp", "required": true }
+  ]
+}

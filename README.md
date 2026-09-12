@@ -69,8 +69,9 @@ in the game can later contradict.
 | [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) | needed by `CDNBookText.dll` (VR: [58101](https://www.nexusmods.com/skyrimspecialedition/mods/58101)) |
 | [Fuz Ro D-oh](https://www.nexusmods.com/skyrimspecialedition/mods/15109) | supplies timing for unvoiced dialogue |
 
-All three are required, on top of SkyrimNet itself. See `INSTALL.txt` for what
-each one failing looks like.
+All three are required, on top of SkyrimNet itself — **0.25 (beta 25) or
+later**, since the content ships in the beta 25 plugin format. See
+`INSTALL.txt` for what each one failing looks like.
 
 > **SkyrimNet's "Enable TTS For Silent NPCs" must be turned on**
 > (WebUI → Settings → Voice).
@@ -85,6 +86,11 @@ each one failing looks like.
 Grab the archive from [Releases](../../releases) and install it with a mod
 manager. The plugin is ESL-flagged, so it costs no load order slot. Safe to add
 to an existing save; removing it returns the courier to his vanilla lines.
+
+The SkyrimNet content ships as an **external plugin layer**
+(`SKSE/Plugins/SkyrimNet/external/oldcustard.courier-descriptions/`); SkyrimNet
+registers it at start-up and lists it under **Plugins → Installed Plugins**
+with an *External* badge — that list is the quick check that it loaded.
 
 Configuration lives in the SkyrimNet WebUI under **Courier Descriptions** —
 debug notifications, whether to use the LLM at all, and which LLM variant.
@@ -143,8 +149,8 @@ four-item delivery is a noticeably long conversation. Most deliveries carry one.
 | `Plugin/` | the authored `.esp` and its `.seq` — binary, edited with xEdit/houseCARL |
 | `Scripts/Source/` | Papyrus sources: the quest script and the courier closing-line override |
 | `_imports/` | compile-time stubs (`SkyrimNetApi`, `CDN_BookText`, `WICourierScript`) |
-| `Prompts/` | the LLM prompt that turns a letter into a description of its sender |
-| `manifest.yaml` | the SkyrimNet plugin manifest (WebUI config schema) |
+| `External/oldcustard.courier-descriptions/` | the SkyrimNet beta 25 content plugin: `manifest.json` + `prompts/courier_sender_line.prompt`, shipped as an external layer |
+| `manifest.yaml` | the SkyrimNet settings manifest (WebUI config schema) — ships under `config/plugins/`, unrelated to the content plugin above |
 | `BookTextPlugin/` | the SKSE plugin: C++ source, CMake, vcpkg manifest |
 | `_build/` | the silent `.fuz` masters that hold the dialogue slot open |
 | `tools/` | `make_silent_fuz.py` (builds those) and `package.ps1` (builds a release) |
