@@ -20,6 +20,19 @@ CHANGES IN 1.2.0
           fine; the old prompt copy left under
           SKSE/Plugins/SkyrimNet/prompts/ is ignored by beta 25, not deleted.
 
+  CHANGED The mod's settings page (Debug Mode, Enable AI Fallback, LLM
+          Variant) now ships inside the plugin too, in the new format the
+          SkyrimNet 0.25.0 release reads. Two things follow:
+          - Your settings go back to their defaults once. Only matters if
+            you had changed one - Debug Mode is the likely one; turn it back
+            on under WebUI -> Courier Descriptions if you use it.
+          - On a beta 25 release candidate older than rc12 the settings page
+            does not appear at all. The mod still works, on the defaults.
+          If you install by hand rather than through a mod manager, delete
+          the old SKSE/Plugins/SkyrimNet/config/plugins/Courier Descriptions/
+          manifest.yaml - left behind, it shows a second settings page that
+          nothing reads.
+
 CHANGES IN 1.1.0
 
   FIXED  Deliveries the courier already has his own voiceline for are now

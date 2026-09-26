@@ -149,8 +149,7 @@ four-item delivery is a noticeably long conversation. Most deliveries carry one.
 | `Plugin/` | the authored `.esp` and its `.seq` — binary, edited with xEdit/houseCARL |
 | `Scripts/Source/` | Papyrus sources: the quest script and the courier closing-line override |
 | `_imports/` | compile-time stubs (`SkyrimNetApi`, `CDN_BookText`, `WICourierScript`) |
-| `External/oldcustard.courier-descriptions/` | the SkyrimNet beta 25 content plugin: `manifest.json` + `prompts/courier_sender_line.prompt`, shipped as an external layer |
-| `manifest.yaml` | the SkyrimNet settings manifest (WebUI config schema) — ships under `config/plugins/`, unrelated to the content plugin above |
+| `External/oldcustard.courier-descriptions/` | the SkyrimNet beta 25 content plugin, shipped as an external layer: `manifest.json`, `prompts/courier_sender_line.prompt`, and `settings/CourierDescriptions.yaml` (the WebUI settings schema, read as `Plugin_CourierDescriptions`) |
 | `BookTextPlugin/` | the SKSE plugin: C++ source, CMake, vcpkg manifest |
 | `_build/` | the silent `.fuz` masters that hold the dialogue slot open |
 | `tools/` | `make_silent_fuz.py` (builds those) and `package.ps1` (builds a release) |

@@ -1220,11 +1220,16 @@ String Function CleanForJSON(String s, Int maxOut) Global
 EndFunction
 
 ; =============================================================================
-; Config (read from the manifest via SkyrimNet)
+; Config (read from the settings schema via SkyrimNet)
+;
+; The schema ships inside the content layer as settings/CourierDescriptions.yaml,
+; and the file name IS the config name. It was "Courier Descriptions" under the
+; legacy config/plugins/ path, but settings/ names allow only letters, digits,
+; - and _, so the space went - and this key had to follow it.
 ; =============================================================================
 
 String Function ConfigKey() Global
-    return "Plugin_Courier Descriptions"
+    return "Plugin_CourierDescriptions"
 EndFunction
 
 Bool Function GetDebugMode() Global
