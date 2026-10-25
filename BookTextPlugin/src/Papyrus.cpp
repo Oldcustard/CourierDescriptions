@@ -1040,9 +1040,13 @@ void CDNBookText::InstallHooks()
     auto* const                     addr = reinterpret_cast<LPVOID>(target.address());
 
     // Logged so a future crash can be told apart from a mis-resolved address
-    // without another guess - compare against the Address Library RVA.
-    logs::info("CDNBookText: GetResponseList at {:016X} (base+{:X})"sv,
-               target.address(), target.address() - REL::Module::get().base());
+    // without another guess - compare against the Address Library RVA. The ID is
+    // logged too because it IS the SE/AE decision: 25083 on a line that should read
+    // 25626 means CommonLibSSE classified the runtime as SE, which is how a library
+    // older than NG v6.7.0 fails on 1.7.104 (see main.cpp).
+    logs::info("CDNBookText: GetResponseList (Address Library id {}) at {:016X} (base+{:X})"sv,
+               RELOCATION_ID(25083, 25626).id(), target.address(),
+               target.address() - REL::Module::get().base());
 
     // The prologue as we found it. A leading E9/EB/FF25 means another plugin
     // detoured this function before us - the single fact the two crash reports

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 # ⚠️ Bump this on every release. It becomes the SKSEPluginInfo version and is
 # the FIRST line of CDNBookText.log - which is how a bug report's log is matched
 # to a build. 1.0.1 shipped for a day announcing itself as v1-0-0-0.
-project(CDNBookText VERSION 1.1.0 LANGUAGES CXX)
+project(CDNBookText VERSION 1.3.0 LANGUAGES CXX)
 
 # CommonLibSSE-NG (alandtse/CommonLibVR branch ng) as a source submodule.
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)

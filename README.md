@@ -73,6 +73,14 @@ All three are required, on top of SkyrimNet itself — **0.25 (beta 25) or
 later**, since the content ships in the beta 25 plugin format. See
 `INSTALL.txt` for what each one failing looks like.
 
+**Game versions.** One DLL covers 1.5.97 (SE), 1.6.x (AE), **1.7.104** and
+Skyrim VR — it resolves its one hook through the Address Library at run time, so
+there is no per-runtime download. On 1.7.104 the surrounding stack has to match
+the game: **SKSE 2.3.1**, an Address Library build that ships
+`versionlib-1-7-104-0.bin` (v13 or later — 1.7.99+ uses a new file format), and
+**SkyrimNet beta 25**, which is the first SkyrimNet that loads on 1.7.104 at all
+(beta 24 fails with *"Unsupported address library format: 5"*).
+
 > **SkyrimNet's "Enable TTS For Silent NPCs" must be turned on**
 > (WebUI → Settings → Voice).
 >
@@ -152,7 +160,7 @@ four-item delivery is a noticeably long conversation. Most deliveries carry one.
 | `External/oldcustard.courier-descriptions/` | the SkyrimNet beta 25 content plugin, shipped as an external layer: `manifest.json`, `prompts/courier_sender_line.prompt`, and `settings/CourierDescriptions.yaml` (the WebUI settings schema, read as `Plugin_CourierDescriptions`) |
 | `BookTextPlugin/` | the SKSE plugin: C++ source, CMake, vcpkg manifest |
 | `_build/` | the silent `.fuz` masters that hold the dialogue slot open |
-| `tools/` | `make_silent_fuz.py` (builds those) and `package.ps1` (builds a release) |
+| `tools/` | `make_silent_fuz.py` (builds those), `package.ps1` (builds a release), `dump-skse-plugin.py` (reads a built DLL's SKSE version block) and `clib-version-matrix.test.cpp` (checks the Address Library ID across every runtime, inside CommonLibSSE's own test suite) |
 | `docs/` | notes reported upstream to SkyrimNet |
 | `INSTALL.txt` | ships inside the release archive |
 
@@ -186,6 +194,20 @@ The **static triplet is load-bearing** — the DLL has to ship self-contained, o
 SKSE silently unloads it when it cannot resolve `fmt.dll`/`spdlog.dll`. Verify
 with `dumpbin /imports`: only Windows DLLs and the VC++ runtime should remain.
 
+The submodule is pinned to a **CommonLibSSE-NG release tag**, and that pin is
+what decides which game versions the DLL works on — 1.7.x needs **v6.7.0 or
+later** (before that, the library classified a 1.7 runtime as *SE*, resolved the
+wrong Address Library ID and could not read the format-5 database that 1.7.99+
+ships). To check a build without launching the game:
+
+```bash
+python tools/dump-skse-plugin.py build/CDNBookText/SKSE/Plugins/Release/CDNBookText.dll
+```
+
+It prints the exported `SKSEPlugin_Version` block and the PE link timestamp, and
+reports them against SKSE's own load gates — `AddressLibraryPostAE` with
+`StructsPost629`/`NoStructUse` for 1.6.629+, and `AddressLibraryV5` for 1.7.99+.
+
 ### The Papyrus scripts
 
 Compile `Scripts/Source/*.psc` with `_imports/` **first** on the import path,
@@ -198,7 +220,7 @@ script uses.
 ```powershell
 tools\package.ps1 -ScriptsDir <folder with the three .pex> `
                   -Dll BookTextPlugin\build\CDNBookText\SKSE\Plugins\Release\CDNBookText.dll `
-                  -Version 1.1.0
+                  -Version 1.3.0
 ```
 
 It assembles the exact shipping layout from tracked sources plus those two build
