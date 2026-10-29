@@ -81,13 +81,20 @@ the game: **SKSE 2.3.1**, an Address Library build that ships
 **SkyrimNet beta 25**, which is the first SkyrimNet that loads on 1.7.104 at all
 (beta 24 fails with *"Unsupported address library format: 5"*).
 
-> **SkyrimNet's "Enable TTS For Silent NPCs" must be turned on**
-> (WebUI → Settings → Voice).
+> **SkyrimNet's silent-NPC voicing must be turned on** (WebUI → Settings →
+> Voice). It is **"Voice Silent NPCs"** on beta 29 and later, and
+> **"Enable TTS For Silent NPCs"** on beta 25–28 — the same setting, renamed.
 >
 > The courier's line is delivered as an *unvoiced* dialogue line, and that
 > setting is what makes SkyrimNet speak one. With it off, everything else works
 > — the sender is resolved, the line is generated and written into the dialogue
 > — and the courier stands there saying nothing.
+>
+> On **beta 25–28** that setting also needed Dragonborn Voice Over v1 installed
+> (with `DBVO.esp` disabled) — SkyrimNet played silent lines through it.
+> **Beta 29 voices them itself and DBVO is no longer involved at all.** On any
+> version, an *enabled* `DBVO.esp` makes SkyrimNet stand aside and leaves these
+> lines to DBVO, which has no recording for a line written at run time.
 
 ## Installing
 

@@ -124,13 +124,27 @@ REQUIREMENTS
     message box before the main menu, naming the .dll it refused.
 
   ONE SKYRIMNET SETTING MUST BE ON
-    SkyrimNet WebUI -> Settings -> Voice -> "Enable TTS For Silent NPCs"
+    SkyrimNet WebUI -> Settings -> Voice -> "Voice Silent NPCs"
+      (called "Enable TTS For Silent NPCs" on beta 25 to beta 28 - same
+       setting, renamed in beta 29)
 
   The courier's extra line is delivered as an UNVOICED dialogue line, and that
   setting is what makes SkyrimNet speak an unvoiced line. With it off, every
   other part still works - the sender is identified, the line is written, the
   subtitle appears on screen - and the courier stands there silently while it
   scrolls past. If you get a subtitle with no voice, this is why.
+
+  ON BETA 25 TO BETA 28, THAT SETTING NEEDED DBVO
+    Those versions played silent NPC lines through Dragonborn Voice Over v1,
+    and SkyrimNet checked for it on startup: install DBVO v1 (not DBVO 2),
+    with DBVO.esp disabled or deleted.
+
+    BETA 29 DROPPED THAT. It voices silent lines itself and no longer looks
+    for DBVO at all, so there is nothing to install.
+
+    On any version, leaving DBVO.esp ENABLED is what breaks this: SkyrimNet
+    then hands silent NPC lines to DBVO, which has no recording for a line
+    written at run time, and the courier says nothing.
 
 INSTALL (MO2)
   1. Install this archive with Mod Organizer 2 and enable the mod.
@@ -243,9 +257,10 @@ COMPATIBILITY
 
 TROUBLESHOOTING
   * His extra line appears as a SUBTITLE but he never says it out loud.
-    "Enable TTS For Silent NPCs" is off - see REQUIREMENTS. This is the most
-    common way the mod half-works: the subtitle proves everything up to the
-    voice is fine, so nothing else needs changing.
+    "Voice Silent NPCs" is off ("Enable TTS For Silent NPCs" before beta 29),
+    or DBVO.esp is enabled - see REQUIREMENTS. This is the most common way the
+    mod half-works: the subtitle proves everything up to the voice is fine, so
+    nothing else needs changing.
   * The courier says a generic line about someone who left no name.
     That is the built-in fallback, used when the generated line did not
     arrive. Check that SkyrimNet's LLM is reachable and that "Enable AI

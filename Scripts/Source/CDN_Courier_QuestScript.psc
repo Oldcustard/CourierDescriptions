@@ -100,7 +100,6 @@ Bool bArmed = false        ; the delivery slots reflect a queued delivery
 ; latch: the conversation it was spent on may turn out not to have been the
 ; delivery, in which case PollAfterPublish stands it back down.
 Bool bNarrated = false
-Bool bWarmedTTS = false    ; PrepareNPCDialogue already asked for this delivery
 Bool bLinePublished = false ; the line is in the INFO the courier speaks
 ; Consecutive polls since the publish with the courier out of dialogue. Scalar,
 ; never an array (see the rule below).
@@ -324,13 +323,12 @@ Float Function PollDelivery()
         bLinePublished = false
         PublishLineToInfo()
         VerifyPublishedLine()
-        WarmSilentTTS()
         ; The INFO speaks the line from here. Nothing else may make a sound
         ; during the delivery - see NarrateDelivery for why DirectNarration is
         ; no longer called.
         bNarrated = true
         dQuietPolls = 0
-        DBG("courier is in dialogue - INFO armed, leaving the line to DBVO")
+        DBG("courier is in dialogue - INFO armed, leaving the line to SkyrimNet")
         return POLL_ARMED
     endIf
     return POLL_ARMED
@@ -421,7 +419,6 @@ Function UnpublishLine()
     SetLineReady(0)
     bLinePublished = false
     bNarrated = false
-    bWarmedTTS = false
     dQuietPolls = 0
 EndFunction
 
@@ -436,7 +433,8 @@ EndFunction
 ; progress)", losing the closing line outright.
 ;
 ; Nothing in SkyrimNet holds this path: its menu-blocking loop is player-click
-; only, and PrepareNPCDialogue refuses to pre-generate here (see WarmSilentTTS).
+; only, and the one native that pre-generated TTS refused to run here and is
+; gone from beta 29 anyway (see the note below ArmDelivery).
 ;
 ; An adaptive hold WAS built - a CDN_Speaking global gating a self-relinking
 ; spacer INFO - and it is gone because it cannot be driven. Both Papyrus signals
@@ -468,34 +466,25 @@ EndFunction
 ; their OWN Fuz Ro D'oh.ini - which this mod does not ship or touch.
 ; =============================================================================
 
-; Ask SkyrimNet to pre-generate TTS for the silent INFO before it is reached.
+; ⛔ There is no pre-warm call here any more, and adding one back needs a new
+; native. WarmSilentTTS() used to call SkyrimNetApi.PrepareNPCDialogue("") once
+; per delivery to give TTS generation a head start on our silent INFO. It never
+; worked on this path - SkyrimNet logged "PrepareNPCDialogue: Base game dialogue
+; detected, no VAD needed" and returned without scanning, because it builds its
+; DialogueContext from the dialogue menu's SELECTED topic and a forced greeting
+; has neither a menu nor a player click - and it was kept only because a no-op
+; call cost nothing and would have started working for free if SkyrimNet widened
+; the trigger.
 ;
-; PrepareNPCDialogue scans the SELECTED topic's TopicInfos, evaluates their
-; conditions, and generates TTS for any silent response it finds - so calling it
-; the moment the courier starts his greeting gives generation a head start over
-; the vanilla lines instead of beginning when our INFO is already on screen.
-; That latency is the whole problem: on the probe run the INFO fired at 29.42 and
-; its audio only started at 34.31, which is why the closing line talked over it.
-;
-; TESTED, AND IT DOES NOT WORK HERE - kept deliberately. SkyrimNet logs
-;   "PrepareNPCDialogue: Base game dialogue detected, no VAD needed"
-; and returns without scanning: no "SelectedTopic", no "Found silent response",
-; and generation still happened on-demand when the line fired. The C++ builds its
-; DialogueContext from the dialogue menu's SELECTED topic, and a forced greeting
-; has neither a menu nor a player click.
-;
-; Left in because it costs one no-op call per delivery and would start working
-; for free if SkyrimNet ever widens that trigger - which is the first of the
-; three fixes asked for in docs/skyrimnet-bug-report.md. Until then nothing
-; closes the latency gap; see the pacing note above for what carries the slot.
-Function WarmSilentTTS()
-    if bWarmedTTS
-        return
-    endIf
-    bWarmedTTS = true
-    Int res = SkyrimNetApi.PrepareNPCDialogue("")
-    DBG("PrepareNPCDialogue (pre-warm silent INFO) returned " + res)
-EndFunction
+; Beta 29-rc1 UNREGISTERED the native (with IsNPCDialogueReady, TriggerPlayerTTS
+; and IsPlayerTTSFinished - the DBVO bridge, now replaced by SkyrimNet's internal
+; DialogueTopicHold). The C++ SilentDialogueManager::PrepareNPCDialogue still
+; exists, but nothing in SkyrimNetApi.pex reaches it - the name is absent from
+; the shipped .pex as well as the .psc - so the call is now a missing-function
+; Papyrus error once per delivery, noise in the one log bug reports are read
+; from, in exchange for the no-op it always was.
+; Nothing still closes the latency gap; see the pacing note above for what
+; carries the slot.
 
 ; A delivery has been queued. Snapshot what the courier is carrying and start
 ; generating a sender description for anything we don't already have one for.
@@ -653,7 +642,6 @@ Function ClearDelivery()
     bAwaitingLLM = false
     bArmed = false
     bNarrated = false
-    bWarmedTTS = false
     dQuietPolls = 0
     if bLinePublished
         ; Leave every INFO carrying its authored text between deliveries, so a
